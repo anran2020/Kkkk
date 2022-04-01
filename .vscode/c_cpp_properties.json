@@ -1,0 +1,21 @@
+{
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "C:/Renesas/RA/e2studio_v2021-04_fsp_v3.0.0/toolchains/gcc_arm/9_2020q2/arm-none-eabi/include",
+                "C:/Renesas/RA/e2studio_v2021-04_fsp_v3.0.0/toolchains/gcc_arm/9_2020q2/lib/gcc/arm-none-eabi/9.3.1/include"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE"
+            ],
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-msvc-x64"
+        }
+    ],
+    "version": 4
+}

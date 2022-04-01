@@ -1,0 +1,11 @@
+################################################################################
+# Automatically-generated file. Do not edit!
+################################################################################
+
+arg1 = $(1)
+export PATH=C:\Renesas\RA\e2studio_v2021-04_fsp_v3.0.0\toolchains\gcc_arm\9_2020q2\bin\;C:\Users\admin\.eclipse\com.renesas.platform_1476787444\Utilities;C:/Renesas/RA/e2studio_v2021-04_fsp_v3.0.0/eclipse//plugins/com.renesas.runtime.jdk.hotspot.win32.x86_64_11.0.8.202009102051/jdk-11.0.8+10/bin/client;C:/Renesas/RA/e2studio_v2021-04_fsp_v3.0.0/eclipse//plugins/com.renesas.runtime.jdk.hotspot.win32.x86_64_11.0.8.202009102051/jdk-11.0.8+10/bin;C:\windows\system32;C:\windows;C:\windows\System32\Wbem;C:\windows\System32\WindowsPowerShell\v1.0\;C:\windows\System32\OpenSSH\;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Program Files\MATLAB\R2016b\runtime\win64;C:\Program Files\MATLAB\R2016b\bin;C:\Program Files\MATLAB\R2016b\polyspace\bin;C:\Users\admin\AppData\Local\Microsoft\WindowsApps;;C:\Users\admin\AppData\Local\Programs\Microsoft VS Code\bin;C:\Renesas\RA\e2studio_v2021-04_fsp_v3.0.0\eclipse
+export TCINSTALL=C:\Renesas\RA\e2studio_v2021-04_fsp_v3.0.0\toolchains\gcc_arm\9_2020q2$(call arg1,\)
+export CWD=$(CURDIR)
+export TC_VERSION=9.3.1.20200408
+export PWD=$(CURDIR)
+export GCC_VERSION=9.3.1

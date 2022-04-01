@@ -1,0 +1,11 @@
+################################################################################
+# Automatically-generated file. Do not edit!
+################################################################################
+
+arg1 = $(1)
+export PATH=C:\Renesas\RA\e2studio_v2021-04_fsp_v3.0.0\toolchains\gcc_arm\9_2020q2\bin\;C:\Users\Administrator\.eclipse\com.renesas.platform_1476787444\Utilities;C:/Renesas/RA/e2studio_v2021-04_fsp_v3.0.0/eclipse//plugins/com.renesas.runtime.jdk.hotspot.win32.x86_64_11.0.8.202009102051/jdk-11.0.8+10/bin/client;C:/Renesas/RA/e2studio_v2021-04_fsp_v3.0.0/eclipse//plugins/com.renesas.runtime.jdk.hotspot.win32.x86_64_11.0.8.202009102051/jdk-11.0.8+10/bin;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Windows\System32\OpenSSH\;D:\Software\SVN\bin;C:\Program Files (x86)\STMicroelectronics\STM32 ST-LINK Utility\ST-LINK Utility;C:\Users\Administrator\AppData\Local\Microsoft\WindowsApps;C:\Program Files\Bandizip\;c:\program files\esafenet\cobra docguard client;C:\Renesas\RA\e2studio_v2021-04_fsp_v3.0.0\eclipse
+export TCINSTALL=C:\Renesas\RA\e2studio_v2021-04_fsp_v3.0.0\toolchains\gcc_arm\9_2020q2$(call arg1,\)
+export CWD=$(CURDIR)
+export TC_VERSION=9.3.1.20200408
+export PWD=$(CURDIR)
+export GCC_VERSION=9.3.1
