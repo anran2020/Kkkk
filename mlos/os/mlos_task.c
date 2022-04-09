@@ -326,7 +326,7 @@ void task_schedule_prepare(void)
 	//初始化任务的调试统计
 	for (i = 0; i < TASK_PRIO_LEVEL_MAX; ++i)
 	{
-		ptsk=taskgroup[i].ptasklist->head;
+		ptsk=taskgroup[0].ptasklist->head;
 		while (ptsk)
 		{
 			ptsk->runCount=0;
