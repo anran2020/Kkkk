@@ -68,6 +68,7 @@ mlu8* upper_txbuf_malloc(mlu16 len)
         return nullptr;
     }
 
+    //发送信息给上位机的地方，将数据放到缓冲区
     if((upperNtp.usock->txDataLen+len)<=upperNtp.usock->txSize)
     {
         u8ptr = upperNtp.usock->pTxBuf + upperNtp.usock->txDataLen;

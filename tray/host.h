@@ -31,8 +31,9 @@ typedef u8 u8eUpMsgGrp;
 
 /*上位机消息类型*/
 /*量产电源柜命令类*/
+/*对应协议*/
 typedef u8 u8eUpMsgIdManu;
-#define UpMsgIdManuConn         0x00
+#define UpMsgIdManuConn         0x00   /*联机*/
 #define UpMsgIdManuFlow         0x01
 #define UpMsgIdManuProtGen     0x02   /*全程或全时保护*/
 #define UpMsgIdManuProtStep     0x03  /*特定工步和全局工步*/

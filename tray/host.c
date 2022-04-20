@@ -3430,6 +3430,7 @@ void upInitBoot()
     timerStart(&mgr->bootTmr, TidBootIdleStay, 3000, WiReset);
 }
 
+//上位机消息处理初始化函数
 void upInitApp()
 {
     UpItfCb *mgr;
@@ -3465,27 +3466,27 @@ void upInitApp()
     {
         mgr->upMsgDisp[idx] = (UpMsgDisp)upMsgIgnore;
     }
-    mgr->upMsgDisp[UpMsgGrpManu] = upMsgDispManu;
-    mgr->upMsgDisp[UpMsgGrpUpdate] = upMsgDispUpdate;
-    mgr->upMsgDisp[UpMsgGrpCali] = upMsgDispCali;
-    mgr->upMsgDisp[UpMsgGrpNdbd] = upMsgDispNdbd;
-    mgr->upMsgDisp[UpMsgGrpFixt] = upMsgDispFixt;
-    mgr->upMsgDisp[UpMsgGrpDbg] = upMsgDispDbg;
+    mgr->upMsgDisp[UpMsgGrpManu] = upMsgDispManu; //电源柜
+    mgr->upMsgDisp[UpMsgGrpUpdate] = upMsgDispUpdate; //配置升级
+    mgr->upMsgDisp[UpMsgGrpCali] = upMsgDispCali; //修调
+    mgr->upMsgDisp[UpMsgGrpNdbd] = upMsgDispNdbd; //针床
+    mgr->upMsgDisp[UpMsgGrpFixt] = upMsgDispFixt; //工装
+    mgr->upMsgDisp[UpMsgGrpDbg] = upMsgDispDbg; //调试
 
     /*生产类*/
     for (idx=0; idx<UpMsgIdManuCri; idx++)
     {
         mgr->upMsgProcManu[idx] = (UpMsgProc)upMsgIgnore;
     }
-    mgr->upMsgProcManu[UpMsgIdManuConn] = upMsgConnAck;
-    mgr->upMsgProcManu[UpMsgIdManuSmplChnl] = upMsgSmplChnl;
-    mgr->upMsgProcManu[UpMsgIdManuSmplNdbd] = upMsgSmplNdbd;
-    mgr->upMsgProcManu[UpMsgIdManuSmplStack] = upMsgSmplStack;
-    mgr->upMsgProcManu[UpMsgIdManuSmplTray] = upMsgSmplTray;
-    mgr->upMsgProcManu[UpMsgIdManuFlow] = upMsgFlowStep;
-    mgr->upMsgProcManu[UpMsgIdManuProtGen] = upMsgProtGen;
-    mgr->upMsgProcManu[UpMsgIdManuProtStep] = upMsgProtStep;
-    mgr->upMsgProcManu[UpMsgIdManuStart] = upMsgFlowStart;
+    mgr->upMsgProcManu[UpMsgIdManuConn] = upMsgConnAck; //
+    mgr->upMsgProcManu[UpMsgIdManuSmplChnl] = upMsgSmplChnl; //按通道采样-通道
+    mgr->upMsgProcManu[UpMsgIdManuSmplNdbd] = upMsgSmplNdbd; //针床-按通道采样
+    mgr->upMsgProcManu[UpMsgIdManuSmplStack] = upMsgSmplStack; //运行堆栈
+    mgr->upMsgProcManu[UpMsgIdManuSmplTray] = upMsgSmplTray; //按托盘采样
+    mgr->upMsgProcManu[UpMsgIdManuFlow] = upMsgFlowStep; //流程
+    mgr->upMsgProcManu[UpMsgIdManuProtGen] = upMsgProtGen; //全程保护
+    mgr->upMsgProcManu[UpMsgIdManuProtStep] = upMsgProtStep; //工步保护
+    mgr->upMsgProcManu[UpMsgIdManuStart] = upMsgFlowStart; //启动
     mgr->upMsgProcManu[UpMsgIdManuPause] = upMsgFlowPause;
     mgr->upMsgProcManu[UpMsgIdManuStop] = upMsgFlowStop;
     mgr->upMsgProcManu[UpMsgIdManuJump] = upMsgFlowJump;
