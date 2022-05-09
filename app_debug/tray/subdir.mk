@@ -4,6 +4,8 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
+../tray/alarm_drive.c \
+../tray/alarm_led.c \
 ../tray/boot.c \
 ../tray/box.c \
 ../tray/channel.c \
@@ -21,6 +23,8 @@ C_SRCS += \
 ../tray/uart.c 
 
 OBJS += \
+./tray/alarm_drive.o \
+./tray/alarm_led.o \
 ./tray/boot.o \
 ./tray/box.o \
 ./tray/channel.o \
@@ -38,6 +42,8 @@ OBJS += \
 ./tray/uart.o 
 
 C_DEPS += \
+./tray/alarm_drive.d \
+./tray/alarm_led.d \
 ./tray/boot.d \
 ./tray/box.d \
 ./tray/channel.d \

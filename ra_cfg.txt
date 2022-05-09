@@ -97,14 +97,14 @@ FSP Configuration
     R7FA6M4AD3CFB.pincfg -> g_bsp_pin_cfg
       AVCC0 127 ANALOG0_AVCC0 - - - - - - - - IO "Read only" - 
       AVSS0 128 ANALOG0_AVSS0 - - - - - - - - IO "Read only" - 
-      P000 140 - - - - Disabled - - "ADC0: AN00; ADC1: AN00; ICU0: IRQ06" - None - - 
-      P001 139 - - - - Disabled - - "ADC0: AN01; ADC1: AN01; ICU0: IRQ07" - None - - 
-      P002 138 - - - - Disabled - - "ADC0: AN02; ADC1: AN02; ICU0: IRQ08" - None - - 
-      P003 137 - - - - Disabled - - "ADC0: AN03" - None - - 
-      P004 136 - - - - Disabled - - "ADC0: AN04; ICU0: IRQ09" - None - - 
-      P005 135 - - - - Disabled - - "ADC0: AN05; ICU0: IRQ10" - None - - 
-      P006 134 - - - - Disabled - - "ADC0: AN06; ICU0: IRQ11" - None - - 
-      P007 133 - - - - Disabled - - "ADC0: AN07" - None - - 
+      P000 140 GPIO - - None "Output mode (Initial Low)" CMOS - "ADC0: AN00; ADC1: AN00; ICU0: IRQ06" - IO - - 
+      P001 139 GPIO - - None "Output mode (Initial Low)" CMOS - "ADC0: AN01; ADC1: AN01; ICU0: IRQ07" - IO - - 
+      P002 138 GPIO - - None "Output mode (Initial Low)" CMOS - "ADC0: AN02; ADC1: AN02; ICU0: IRQ08" - IO - - 
+      P003 137 GPIO - - - "Output mode (Initial Low)" CMOS - "ADC0: AN03" - IO - - 
+      P004 136 GPIO - - None "Output mode (Initial Low)" CMOS - "ADC0: AN04; ICU0: IRQ09" - IO - - 
+      P005 135 GPIO - - None "Output mode (Initial Low)" CMOS - "ADC0: AN05; ICU0: IRQ10" - IO - - 
+      P006 134 GPIO - - None "Output mode (Initial Low)" CMOS - "ADC0: AN06; ICU0: IRQ11" - IO - - 
+      P007 133 GPIO - - - "Output mode (Initial Low)" CMOS - "ADC0: AN07" - IO - - 
       P008 132 - - - - Disabled - - "ADC0: AN08; ICU0: IRQ12" - None - - 
       P009 131 - - - - Disabled - - "ADC0: AN09; ICU0: IRQ13" - None - - 
       P014 124 - - - - Disabled - - "ADC0: AN12; DAC0: DA" - None - - 
@@ -160,10 +160,10 @@ FSP Configuration
       P403 4 GPIO - Low None "Output mode (Initial Low)" CMOS - "AGT0: AGTIO; AGT1: AGTIO; AGT2: AGTIO; AGT3: AGTIO; ETHERC_MII0: LINKSTA; ETHERC_RMII0: LINKSTA; GPT3: GTIOCA; ICU0: IRQ14; RTC0: RTCIC1; SCI7: CTSRTS; SSI0: SSISCK" - IO - - 
       P404 5 GPIO - Low None "Output mode (Initial Low)" CMOS - "AGT0: AGTIO; AGT1: AGTIO; AGT2: AGTIO; AGT3: AGTIO; ETHERC_MII0: EXOUT; ETHERC_RMII0: EXOUT; GPT3: GTIOCB; ICU0: IRQ15; RTC0: RTCIC2; SCI7: CTS; SSI0: SSIWS" - IO - - 
       P405 6 GPIO - Low - "Output mode (Initial Low)" CMOS - "ETHERC_MII0: TX_EN; ETHERC_RMII0: TXD_EN; GPT1: GTIOCA; SSI0: SSITXD" - IO - - 
-      P406 7 - - - - Disabled - - "AGT5: AGTO; ETHERC_MII0: RX_ER; ETHERC_RMII0: TXD1; GPT1: GTIOCB; SPI0: SSL3; SSI0: SSIRXD" - None - - 
-      P407 36 - - - - Disabled - - "ADC0: ADTRG; AGT0: AGTIO; CTSU0: TS03; ETHERC_MII0: EXOUT; ETHERC_RMII0: EXOUT; GPT6: GTIOCA; IIC0: SDA; RTC0: RTCOUT; SCI4: CTSRTS; SPI0: SSL3; USB_FS0: VBUS" - None - - 
-      P408 35 - - - - Disabled - - "AGT2: AGTOB; CTSU0: TS04; ETHERC_MII0: CRS; ETHERC_RMII0: CRS_DV; GPT_OPS0: GTOWLO; GPT6: GTIOCB; ICU0: IRQ07; IIC0: SCL; SCI3: RXD; SCI3: SCL; SCI4: CTS; USB_FS0: ID" - None - - 
-      P409 34 - - - - Disabled - - "AGT2: AGTOA; CTSU0: TS05; ETHERC_MII0: RX_CLK; ETHERC_RMII0: RX_ER; GPT_OPS0: GTOWUP; ICU0: IRQ06; SCI3: SDA; SCI3: TXD; USB_FS0: EXICEN" - None - - 
+      P406 7 GPIO - Low - "Output mode (Initial Low)" CMOS - "AGT5: AGTO; ETHERC_MII0: RX_ER; ETHERC_RMII0: TXD1; GPT1: GTIOCB; SPI0: SSL3; SSI0: SSIRXD" - IO - - 
+      P407 36 GPIO - Low - "Output mode (Initial Low)" CMOS - "ADC0: ADTRG; AGT0: AGTIO; CTSU0: TS03; ETHERC_MII0: EXOUT; ETHERC_RMII0: EXOUT; GPT6: GTIOCA; IIC0: SDA; RTC0: RTCOUT; SCI4: CTSRTS; SPI0: SSL3; USB_FS0: VBUS" - IO - - 
+      P408 35 GPIO - Low None "Output mode (Initial Low)" CMOS - "AGT2: AGTOB; CTSU0: TS04; ETHERC_MII0: CRS; ETHERC_RMII0: CRS_DV; GPT_OPS0: GTOWLO; GPT6: GTIOCB; ICU0: IRQ07; IIC0: SCL; SCI3: RXD; SCI3: SCL; SCI4: CTS; USB_FS0: ID" - IO - - 
+      P409 34 GPIO - Low None "Output mode (Initial Low)" CMOS - "AGT2: AGTOA; CTSU0: TS05; ETHERC_MII0: RX_CLK; ETHERC_RMII0: RX_ER; GPT_OPS0: GTOWUP; ICU0: IRQ06; SCI3: SDA; SCI3: TXD; USB_FS0: EXICEN" - IO - - 
       P410 33 SPI1_MISO - Low None "Peripheral mode" CMOS None "AGT1: AGTOB; CTSU0: TS06; ETHERC_MII0: ERXD0; ETHERC_RMII0: RXD1; GPT_OPS0: GTOVLO; GPT9: GTIOCB; ICU0: IRQ05; SCI0: RXD; SCI0: SCL; SCI3: SCK; SDHI0: DAT1; SPI1: MISO" - IO - - 
       P411 32 SPI1_MOSI - Low None "Peripheral mode" CMOS None "AGT1: AGTOA; CTSU0: TS07; ETHERC_MII0: ERXD1; ETHERC_RMII0: RXD0; GPT_OPS0: GTOVUP; GPT9: GTIOCA; ICU0: IRQ04; SCI0: SDA; SCI0: TXD; SCI3: CTSRTS; SDHI0: DAT0; SPI1: MOSI" - IO - - 
       P412 31 SPI1_RSPCK - Low - "Peripheral mode" CMOS None "AGT1: AGTEE; CTSU0: TS08; ETHERC_MII0: ETXD0; ETHERC_RMII0: REF50CK; GPT_OPS0: GTOULO; SCI0: SCK; SCI3: CTS; SDHI0: CMD; SPI1: RSPCK" - IO - - 

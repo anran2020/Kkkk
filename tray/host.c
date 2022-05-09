@@ -25,15 +25,17 @@
 #ifdef DebugVersion
 #else
 #include "upper_ntp.h"
+#include "alarm_led.h"
 #endif
 
+/*本文件包括所有上中协议的处理入口*/
 
 UpItfCb *gUpItfCb;
 
 /*临时用的全局变量*/
 u8 *sendUpBuf;
 u8 *recvUpBuf;
-s32 gAbsTimeSec;
+u32 gAbsTimeSec;
 
 Ret upStepChkErr(UpFlowCmd *cmd, UpStepInfo *step)
 {
@@ -42,7 +44,7 @@ Ret upStepChkErr(UpFlowCmd *cmd, UpStepInfo *step)
 
 Ret upStepChkQuiet(UpFlowCmd *cmd, UpStepInfo *step)
 {
-    if (0x01==step->paramEnable && step->stepParam[0]>=1000)
+    if (0x01 == step->paramEnable)
     {
         return Ok;
     }
@@ -56,8 +58,7 @@ Ret upStepChkCCC(UpFlowCmd *cmd, UpStepInfo *step)
 
     tray = &gDevMgr->tray[cmd->trayIdx];
     if (0x0f==step->paramEnable
-        && step->stepParam[0]>0 && step->stepParam[0]<tray->boxCfg.maxTrayCur
-        && step->stepParam[1] >= 1000)
+        && step->stepParam[0]>0 && step->stepParam[0]<=tray->boxCfg.maxTrayCur)
     {
         return Ok;
     }
@@ -71,8 +72,7 @@ Ret upStepChkCCD(UpFlowCmd *cmd, UpStepInfo *step)
 
     tray = &gDevMgr->tray[cmd->trayIdx];
     if (0x0f==step->paramEnable
-        && step->stepParam[0]>0 && step->stepParam[0]<tray->boxCfg.maxTrayCur
-        && step->stepParam[1] >= 1000)
+        && step->stepParam[0]>0 && step->stepParam[0]<=tray->boxCfg.maxTrayCur)
     {
         return Ok;
     }
@@ -88,9 +88,8 @@ Ret upStepChkCCCVC(UpFlowCmd *cmd, UpStepInfo *step)
     tray = &gDevMgr->tray[cmd->trayIdx];
     param = step->stepParam;
     if (0x1f==step->paramEnable
-        && param[0]>0 && param[0]<tray->boxCfg.maxTrayCur
-        && param[1]>0 && param[1]<tray->boxCfg.maxTrayVol
-        && param[2] >= 1000)
+        && param[0]>0 && param[0]<=tray->boxCfg.maxTrayCur
+        && param[1]>0 && param[1]<=tray->boxCfg.maxTrayVol)
     {
         return Ok;
     }
@@ -106,9 +105,8 @@ Ret upStepChkCCCVD(UpFlowCmd *cmd, UpStepInfo *step)
     tray = &gDevMgr->tray[cmd->trayIdx];
     param = step->stepParam;
     if (0x1f==step->paramEnable
-        && param[0]>0 && param[0]<tray->boxCfg.maxTrayCur
-        && param[1]>0 && param[1]<tray->boxCfg.maxTrayVol
-        && param[2] >= 1000)
+        && param[0]>0 && param[0]<=tray->boxCfg.maxTrayCur
+        && param[1]>0 && param[1]<=tray->boxCfg.maxTrayVol)
     {
         return Ok;
     }
@@ -124,9 +122,8 @@ Ret upStepChkCVC(UpFlowCmd *cmd, UpStepInfo *step)
     tray = &gDevMgr->tray[cmd->trayIdx];
     param = step->stepParam;
     if (0x1e == (step->paramEnable & 0x1e)
-        && param[1]>0 && param[1]<tray->boxCfg.maxTrayVol
-        && (!(step->paramEnable&0x01) || param[0]>0 && param[0]<tray->boxCfg.maxTrayCur)
-        && param[2] >= 1000)
+        && param[1]>0 && param[1]<=tray->boxCfg.maxTrayVol
+        && (!(step->paramEnable&0x01) || param[0]>0 && param[0]<=tray->boxCfg.maxTrayCur))
     {
         return Ok;
     }
@@ -142,9 +139,8 @@ Ret upStepChkCVD(UpFlowCmd *cmd, UpStepInfo *step)
     tray = &gDevMgr->tray[cmd->trayIdx];
     param = step->stepParam;
     if (0x1e == (step->paramEnable & 0x1e)
-        && param[1]>0 && param[1]<tray->boxCfg.maxTrayVol
-        && (!(step->paramEnable&0x01) || param[0]>0 && param[0]<tray->boxCfg.maxTrayCur)
-        && param[2] >= 1000)
+        && param[1]>0 && param[1]<=tray->boxCfg.maxTrayVol
+        && (!(step->paramEnable&0x01) || param[0]>0 && param[0]<=tray->boxCfg.maxTrayCur))
     {
         return Ok;
     }
@@ -152,14 +148,19 @@ Ret upStepChkCVD(UpFlowCmd *cmd, UpStepInfo *step)
     return Nok;
 }
 
+/*允许跳转次数为零*/
 Ret upStepChkLoop(UpFlowCmd *cmd, UpStepInfo *step)
 {
-    return Ok;
+    if (0x03==step->paramEnable && step->stepParam[0]<StepIdNull && step->stepParam[1]<65536)
+    {
+        return Ok;
+    }
+    return Nok;
 }
 
 Ret upStepChkDcir(UpFlowCmd *cmd, UpStepInfo *step)
 {
-    return Ok;
+    return Nok;
 }
 
 Ret upStepChk(UpFlowCmd *cmd, UpStepInfo *step)
@@ -172,53 +173,131 @@ Ret upStepChk(UpFlowCmd *cmd, UpStepInfo *step)
     return Nok;
 }
 
-u16eRspCode upFlowChk(UpFlowCmd *cmd, u16 pldLen)
+/*托盘统排通道号到通道的映射,不检查参数*/
+/*返回主通道指针,以及通道内子主统排索引(genIdxInChn)*/
+Channel *upChnMap(Tray *tray, u16 chnIdx, u16 *genIdxInChn)
+{
+    Channel *chn;
+
+    if (BoxTypeParallel == tray->boxCfg.boxType)
+    {
+        *genIdxInChn = 0;
+        chn = &tray->chn[chnIdx];
+    }
+    else
+    {
+        Channel *chnCri;
+
+        for (chn=tray->chn,chnCri=chn+tray->trayChnAmt; chn<chnCri; chn++)
+        {
+            if (chnIdx <= chn->chnCellAmt)
+            {
+                *genIdxInChn = chnIdx;
+                break;
+            }
+            chnIdx -= chn->chnCellAmt+1;
+        }
+    }
+    return chn;
+}
+
+u16eRspCode upFlowStepChk(UpFlowCmd *cmd, u16 pldLen)
 {
     UpStepInfo *step;
     DevMgr *dev;
     FlowRecvCtrl *ctrl;
+    Tray *tray;
     u16 pldLenHope;
     u16 idx;
 
     dev = gDevMgr;
-    ctrl = recvCtrlGet();
     pldLenHope = sizeof(UpFlowCmd) + Align16(cmd->chnAmt)*2;
     pldLenHope += sizeof(UpStepInfo) * cmd->stepAmt;
-    if (pldLenHope!=pldLen || 0==cmd->stepAmt || cmd->stepAmt>MaxStepTrans
-        || cmd->stepSeq+cmd->stepAmt>cmd->stepAmtTtl || cmd->trayIdx>=dev->trayAmt
-        || cmd->chnAmt > dev->tray[cmd->trayIdx].trayChnAmt)
+    if (pldLenHope!=pldLen || cmd->trayIdx>=dev->trayAmt)
     {
-        Err("basic\r\n");
-        goto errHandler;
+        /*基本检查,直接返回错误,不清除之前*/
+        return RspParam;
     }
 
+    tray = &dev->tray[cmd->trayIdx];
+    if (0==cmd->stepAmt || cmd->stepAmt>MaxStepTrans
+        || cmd->stepSeq+cmd->stepAmt > cmd->stepAmtTtl
+        || cmd->chnAmt > dev->tray[cmd->trayIdx].trayChnAmt)
+    {
+        recvCtrlFree(cmd->trayIdx);
+        return RspParam;
+    }
+
+    ctrl = recvCtrlGet(cmd->trayIdx);
     if (NULL == ctrl)  /*必是单包或多包之首包*/
     {
+        Channel *chn;
+        u16 genChnIdx;
+
         if (0 != cmd->stepSeq)
         {
-            Err("first step\r\n");
-            goto errHandler;
+            if (cmd->stepAmtTtl == cmd->stepSeq+cmd->stepAmt) /*重发*/
+            {
+                return RspRepeatDrop;
+            }
+            return RspStepFst;
         }
 
-        for (idx=0; idx<cmd->chnAmt; idx++)
+        if (0 == cmd->chnAmt)  /*整盘*/
         {
-            if (cmd->chnId[idx] >= dev->tray[cmd->trayIdx].trayChnAmt)
+            Channel *chnCri;
+            
+            for (chn=tray->chn,chnCri=&tray->chn[tray->trayChnAmt]; chn<chnCri; chn++)
             {
-                Err("chn-id\r\n");
-                goto errHandler;
+                if (ChnStaIdle!=chn->chnStateMed && ChnStaPause!=chn->chnStateMed)
+                {
+                    return RspChnWiRun;
+                }
+            }
+        }
+        else
+        {
+            for (idx=0; idx<cmd->chnAmt; idx++)
+            {
+                if (cmd->chnId[idx] >= tray->genChnAmt)
+                {
+                    return RspChnIdx;
+                }
+
+                chn = upChnMap(tray, cmd->chnId[idx], &genChnIdx);
+                if (0 != genChnIdx)
+                {
+                    return RspChnIdx;
+                }
+
+                if (ChnStaIdle!=chn->chnStateMed && ChnStaPause!=chn->chnStateMed)
+                {
+                    return RspChnWiRun;
+                }
             }
         }
     }
     else  /*有多包*/
     {
-        if (ctrl->recvMsgId != UpCmdId(UpMsgGrpManu, UpMsgIdManuFlow)
+        if (ctrl->recvMsgId != UpCmdIdManuFlow
             || ctrl->total != cmd->stepAmtTtl
-            || ctrl->offsetHope != cmd->stepSeq
             || ctrl->chnAmt != cmd->chnAmt
             || memcmp(ctrl->chnIdx, cmd->chnId, cmd->chnAmt*2))
         {
-            Err("multi match\r\n");
-            goto errHandler;
+            recvCtrlFree(cmd->trayIdx);
+            return RspMultiSeq;
+        }
+        else if (ctrl->offsetHope != cmd->stepSeq)
+        {
+            if (ctrl->offsetHope == cmd->stepSeq+cmd->stepAmt) /*重发*/
+            {
+                return RspRepeatDrop;
+            }
+            else
+            {
+                recvCtrlFree(cmd->trayIdx);
+                return RspMultiSeq;
+            }
         }
     }
 
@@ -227,124 +306,196 @@ u16eRspCode upFlowChk(UpFlowCmd *cmd, u16 pldLen)
     {
         if (step->stepId!=cmd->stepSeq+idx || Ok!=upStepChk(cmd, step))
         {
-            Err("step info\r\n");
-            goto errHandler;
+            recvCtrlFree(cmd->trayIdx);
+            return RspParam;
         }
     }
 
     return RspOk;
-
-errHandler:
-    recvCtrlFree();
-    return RspParam;
 }
 
-u16eRspCode upProtGenChk(UpProtGenCmd *cmd, u16 pldLen)
+u16eRspCode upTrayProtChk(UpProtGenCmd *cmd, u16 pldLen)
 {
-    UpFixProt *fixProt;
+    UpMixProt *mixProt;
     DevMgr *dev;
+    Tray *tray;
     FlowRecvCtrl *ctrl;
     u16 pldLenHope;
     u16 idx;
 
     dev = gDevMgr;
-    ctrl = recvCtrlGet();
     pldLenHope = sizeof(UpProtGenCmd);
-    for (idx=0; idx<cmd->fixProtAmt; idx++)
+    for (idx=0; idx<cmd->mixProtAmt; idx++)
     {
-        fixProt = (UpFixProt *)((u8 *)cmd + pldLenHope);
-        pldLenHope += sizeof(UpFixProt) + Align8(fixProt->fixProtlen);
+        mixProt = (UpMixProt *)((u8 *)cmd + pldLenHope);
+        pldLenHope += sizeof(UpMixProt) + Align8(mixProt->mixProtLen);
     }
     pldLenHope += sizeof(UpProtUnit) * cmd->protAmt;
-    if (pldLenHope!=pldLen || cmd->protAmt>MaxProtTrans
-        || cmd->protSeq+cmd->protAmt>cmd->protAmtTtl || cmd->trayIdx>=dev->trayAmt)
+    if (pldLenHope!=pldLen || cmd->trayIdx>=dev->trayAmt)
     {
-        Err("basic\r\n");
-        goto errHandler;
+        /*基本合法性检查,不操作*/
+        return RspParam;
     }
 
+    tray = &dev->tray[cmd->trayIdx];
+    if (cmd->protAmt>MaxProtTrans || cmd->protSeq+cmd->protAmt>cmd->protAmtTtl
+        || (0!=cmd->mixProtAmt && 0!=cmd->protSeq))
+    {
+        recvCtrlFree(cmd->trayIdx);
+        return RspParam;
+    }
+
+    ctrl = recvCtrlGet(cmd->trayIdx);
     if (NULL == ctrl)  /*必是单包或多包之首包*/
     {
+        Channel *chn;
+        Channel *chnCri;
+
         if (0 != cmd->protSeq) /*不管有无保护，序号必须为零*/
         {
-            Err("prot seq\r\n");
-            goto errHandler;
-        }
-    }
-    else  /*有多包*/
-    {
-        if (ctrl->recvMsgId != UpCmdIdManuProtGen
-            || ctrl->total!=cmd->protAmtTtl || 0==cmd->protAmt
-            || ctrl->offsetHope != cmd->protSeq)
-        {
-            Err("multi match\r\n");
-            goto errHandler;
-        }
-    }
-
-    /*保护项的检查随用随加*/
-    return RspOk;
-
-errHandler:
-    recvCtrlFree();
-    return RspParam;
-}
-
-u16eRspCode upProtStepChk(UpProtStepCmd *cmd, u16 pldLen)
-{
-    DevMgr *dev;
-    FlowRecvCtrl *ctrl;
-    u16 pldLenHope;
-    u16 idx;
-
-    dev = gDevMgr;
-    ctrl = recvCtrlGet();
-    pldLenHope = sizeof(UpProtStepCmd) + Align16(cmd->chnAmt)*2;
-    pldLenHope += sizeof(UpProtUnit) * cmd->protAmt;
-    if (pldLenHope!=pldLen || cmd->protAmt>MaxProtTrans
-        || cmd->protSeq+cmd->protAmt>cmd->protAmtTtl || cmd->trayIdx>=dev->trayAmt
-        || cmd->chnAmt > dev->tray[cmd->trayIdx].trayChnAmt)
-    {
-        Err("basic\r\n");
-        goto errHandler;
-    }
-
-    if (NULL == ctrl)  /*必是单包或多包之首包*/
-    {
-        if (0 != cmd->protSeq)
-        {
-            Err("first prot\r\n");
-            goto errHandler;
-        }
-
-        for (idx=0; idx<cmd->chnAmt; idx++)
-        {
-            if (cmd->chnId[idx] >= dev->tray[cmd->trayIdx].trayChnAmt)
+            if (cmd->protAmtTtl == cmd->protSeq+cmd->protAmt) /*重发*/
             {
-                Err("chn-id\r\n");
-                goto errHandler;
+                return RspRepeatDrop;
+            }
+            return RspProtFst;
+        }
+
+        for (chn=tray->chn,chnCri=&tray->chn[tray->trayChnAmt]; chn<chnCri; chn++)
+        {
+            /*这里难搞,全程保护适用于托盘,假设一个通道在跑*/
+            /*此时上位机下发第二个通道的全程保护的时候会报错*/
+            /*但上位机若不发全程保护,又不符合约定*/
+            /*跟上位机权宜的办法:收到全程保护时,有通道再跑就丢弃,无通道在跑就覆盖*/
+            if (ChnStaIdle!=chn->chnStateMed && ChnStaPause!=chn->chnStateMed)
+            {
+                return RspRepeatDrop;
             }
         }
     }
     else  /*有多包*/
     {
-        if (ctrl->recvMsgId != UpCmdId(UpMsgGrpManu, UpMsgIdManuProtStep)
-            || ctrl->total != cmd->protAmtTtl
-            || ctrl->offsetHope != cmd->protSeq
-            || ctrl->chnAmt != cmd->chnAmt
-            || memcmp(ctrl->chnIdx, cmd->chnId, cmd->chnAmt*2))
+        if (ctrl->recvMsgId != UpCmdIdManuProtGen
+            || ctrl->total!=cmd->protAmtTtl || 0==cmd->protAmt)
         {
-            Err("multi match\r\n");
-            goto errHandler;
+            recvCtrlFree(cmd->trayIdx);
+            return RspMultiSeq;
+        }
+        else if (ctrl->offsetHope != cmd->protSeq)
+        {
+            if (ctrl->offsetHope == cmd->protSeq+cmd->protAmt)
+            {
+                return RspRepeatDrop; /*重发*/
+            }
+            else
+            {
+                recvCtrlFree(cmd->trayIdx);
+                return RspMultiSeq;
+            }
         }
     }
 
-    /*保护项的检查随用随加*/
     return RspOk;
+}
 
-errHandler:
-    recvCtrlFree();
-    return RspParam;
+u16eRspCode upStepProtChk(UpProtStepCmd *cmd, u16 pldLen)
+{
+    DevMgr *dev;
+    FlowRecvCtrl *ctrl;
+    Tray *tray;
+    u16 pldLenHope;
+    u16 idx;
+
+    dev = gDevMgr;
+    pldLenHope = sizeof(UpProtStepCmd) + Align16(cmd->chnAmt)*2;
+    pldLenHope += sizeof(UpProtUnit) * cmd->protAmt;
+    if (pldLenHope!=pldLen || cmd->trayIdx>=dev->trayAmt)
+    {
+        /*基本合法性检查,不操作*/
+        return RspParam;
+    }
+
+    tray = &dev->tray[cmd->trayIdx];
+    if (cmd->protAmt>MaxProtTrans || cmd->protSeq+cmd->protAmt>cmd->protAmtTtl
+        || cmd->chnAmt > dev->tray[cmd->trayIdx].trayChnAmt)
+    {
+        recvCtrlFree(cmd->trayIdx);
+        return RspParam;
+    }
+
+    ctrl = recvCtrlGet(cmd->trayIdx);
+    if (NULL == ctrl)  /*必是单包或多包之首包*/
+    {
+        Channel *chn;
+        u16 genChnIdx;
+
+        if (0 != cmd->protSeq)
+        {
+            if (cmd->protAmtTtl == cmd->protSeq+cmd->protAmt) /*重发*/
+            {
+                return RspRepeatDrop;
+            }
+            return RspProtFst;
+        }
+
+        if (0 == cmd->chnAmt)  /*整盘*/
+        {
+            Channel *chnCri;
+            
+            for (chn=tray->chn,chnCri=&tray->chn[tray->trayChnAmt]; chn<chnCri; chn++)
+            {
+                if (ChnStaIdle!=chn->chnStateMed && ChnStaPause!=chn->chnStateMed)
+                {
+                    return RspChnWiRun;
+                }
+            }
+        }
+        else
+        {
+            for (idx=0; idx<cmd->chnAmt; idx++)
+            {
+                if (cmd->chnId[idx] >= tray->genChnAmt)
+                {
+                    return RspChnIdx;
+                }
+
+                chn = upChnMap(tray, cmd->chnId[idx], &genChnIdx);
+                if (0 != genChnIdx)
+                {
+                    return RspChnIdx;
+                }
+
+                if (ChnStaIdle!=chn->chnStateMed && ChnStaPause!=chn->chnStateMed)
+                {
+                    return RspChnWiRun;
+                }
+            }
+        }
+    }
+    else  /*有多包*/
+    {
+        if (ctrl->recvMsgId != UpCmdIdManuProtStep
+            || ctrl->total != cmd->protAmtTtl
+            || ctrl->chnAmt != cmd->chnAmt
+            || memcmp(ctrl->chnIdx, cmd->chnId, cmd->chnAmt*2))
+        {
+            recvCtrlFree(cmd->trayIdx);
+            return RspMultiSeq;
+        }
+        else if (ctrl->offsetHope != cmd->protSeq)
+        {
+            if (ctrl->offsetHope == cmd->protSeq+cmd->protAmt)
+            {
+                return RspRepeatDrop; /*重发*/
+            }
+            else
+            {
+                recvCtrlFree(cmd->trayIdx);
+                return RspMultiSeq;
+            }
+        }
+    }
+
+    return RspOk;
 }
 
 /*
@@ -395,36 +546,9 @@ void upMsgIgnore(void)
     return;
 }
 
-/*托盘统排通道号到通道的映射,不检查参数*/
-/*返回主通道指针,以及通道内子主统排索引*/
-Channel *upChnMap(Tray *tray, u16 chnIdx, u16 *genIdxInChn)
-{
-    Channel *chn;
-
-    if (BoxTypeParallel == tray->boxCfg.boxType)
-    {
-        *genIdxInChn = 0;
-        chn = &tray->chn[chnIdx];
-    }
-    else
-    {
-        Channel *chnCri;
-
-        for (chn=tray->chn,chnCri=chn+tray->trayChnAmt; chn<chnCri; chn++)
-        {
-            if (chnIdx <= chn->chnCellAmt)
-            {
-                *genIdxInChn = chnIdx;
-                break;
-            }
-            chnIdx -= chn->chnCellAmt+1;
-        }
-    }
-    return chn;
-}
-
 void _____begin_of_product_msg_____(){}
 
+/*定时(半小时)查询是否触发上位机脱机保护,若触发则保护且停止采样*/
 void trayUpDiscExpr(Timer *timer)
 {
     Tray *tray;
@@ -441,6 +565,7 @@ void trayUpDiscExpr(Timer *timer)
     return;
 }
 
+/*定时查询与上位机是否有交互*/
 void keepAliveChk(Timer *timer)
 {
     if (0 == gUpItfCb->rxUpMsgCnt)
@@ -464,6 +589,9 @@ void keepAliveChk(Timer *timer)
     return;
 }
 
+/*发送联机给上位机,包括*/
+/*1.中位机上电延迟几秒(等查询级联设备)*/
+/*2.任何级联设备联机变更*/
 void sendUpConnCmd(Timer *timer)
 {
     ConnUpCmd *cmd;
@@ -499,10 +627,11 @@ void sendUpConnCmd(Timer *timer)
     cmd = (ConnUpCmd *)pld;
     cmd->protocolVer = gProtoSoftVer;
     cmd->mediumSoftVer = gMediumSoftVer;
-    cmd->smplVer = 0x0001;
-    cmd->stepVer = 0x0001;
-    cmd->protectVer = 0x0001;
+    cmd->smplVer = gProtoSmplVer;
+    cmd->stepVer = 0x0000;
+    cmd->protectVer = 0x0000;
     cmd->connType = gUpItfCb->connType;
+    cmd->rsvd = 0;
     cmd->maxSmplSeq = gDevMgr->tray[0].smplMgr.smplSeqMax;
     pldLen = sizeof(ConnUpCmd);
 
@@ -516,7 +645,7 @@ void sendUpConnCmd(Timer *timer)
 
         trayInfo = (ConnTrayInfo *)tlv->devInfo;
         trayInfo->cellAmt = tray->trayCellAmt;
-        trayInfo->smplSeqRst = ConnTypeFst==cmd->connType ? tray->smplMgr.upSmplRst : False;
+        trayInfo->smplSeqRst = tray->smplMgr.upSmplRstInd;
         trayInfo->trayIdx = trayIdx;
 
         pldLen += sizeof(ConnDevInfoTlv) + sizeof(ConnTrayInfo);
@@ -579,6 +708,8 @@ void sendUpConnCmd(Timer *timer)
     /*旁路切换板*/
     for (trayIdx=0; trayIdx<devMgr->trayAmt; trayIdx++)
     {
+        ConnSerielSwInfo *connSerielSwInfo;
+
         tray = &devMgr->tray[trayIdx];
         bypsSw = tray->bypsSw;
         for (boxIdx=0; boxIdx<tray->boxAmt; boxIdx++)
@@ -587,16 +718,17 @@ void sendUpConnCmd(Timer *timer)
             for (subBoxIdx=0; subBoxIdx<tray->boxCfg.bypsSwAmt; subBoxIdx++, bypsSw++)
             {
                 tlv = (ConnDevInfoTlv *)(pld+pldLen);
-                tlv->devType = DevTypeVolSmpl;
-                tlv->devInfoLen = sizeof(ConnCmmnDevInfo);
-
-                cmmnDev = (ConnCmmnDevInfo *)tlv->devInfo;
-                cmmnDev->trayIdx = trayIdx;
-                cmmnDev->devIdx = bypsSw->idxInTray;
-                cmmnDev->softVer = bypsSw->softVer;
-                cmmnDev->online = bypsSw->online;
-
-                pldLen += sizeof(ConnDevInfoTlv) + sizeof(ConnCmmnDevInfo);
+                tlv->devType = DevTypeSeriesSw;
+                tlv->devInfoLen = sizeof(ConnSerielSwInfo);
+    
+                connSerielSwInfo = (ConnSerielSwInfo *)tlv->devInfo;
+                connSerielSwInfo->trayIdx = trayIdx;
+                connSerielSwInfo->devIdx = bypsSw->idxInTray;
+                connSerielSwInfo->softVer = bypsSw->softVer;
+                connSerielSwInfo->chnIdx = bypsSw->idxInTray;
+                connSerielSwInfo->online = bypsSw->online;
+    
+                pldLen += sizeof(ConnDevInfoTlv) + sizeof(ConnSerielSwInfo);
             }
         }
     }
@@ -674,74 +806,91 @@ void sendUpConnCmd(Timer *timer)
             gUpItfCb->upOnline = True;
             timerStart(&gUpItfCb->keepAliveTmr, TidKeepAlive, 20000, WiReset);
         }
+        for (trayIdx=0; trayIdx<devMgr->trayAmt; trayIdx++)
+        {
+            devMgr->tray[trayIdx].smplMgr.upSmplRstInd = False;
+        }
     }
 
     return;
 }
 
-/*todo,目前只做了上线,需补充掉线*/
+/*通知给上位机发联机*/
 void sendUpConnNtfy()
 {
     gDevMgr->needConnUp = True;
     return;
 }
 
+/*收到上位机的联机响应*/
 void upMsgConnAck(u8 *cmdPld, u16 cmdPldLen)
 {
     ConnUpAck *ack;
-    Times time;
 
     ack = (ConnUpAck *)cmdPld;
     if (0 == gAbsTimeSec)
     {
-        sysTimeGet(&time);
-        gAbsTimeSec = (s32)ack->absSec - time.sec;
+        gAbsTimeSec = ack->absSec - sysTimeSecGet();
     }
     return;
 }
 
+/*上位机下发顺序: 工步流程-->全程保护-->工步保护(含流程保护)*/
 void upMsgFlowStep(u8 *cmdPld, u16 cmdPldLen)
 {
     UpFlowCmd *cmd;
     u16eRspCode rspCode;
 
     cmd = (UpFlowCmd *)cmdPld;
-    if (RspOk == (rspCode=upFlowChk(cmd, cmdPldLen)))
+    if (RspOk == (rspCode=upFlowStepChk(cmd, cmdPldLen)))
     {
-        rspCode = upFlowSave(cmdPld);
+        rspCode = upFlowStepSave(cmdPld);
     }
 
+    if (RspRepeatDrop == rspCode)
+    {
+        rspCode = RspOk;
+    }
     rspUpCmmn(UpCmdIdManuFlow, cmd->trayIdx, rspCode);
     return;
 }
 
 
-/*客户叫全程或安全保护，我们也不叫global了，以免扯不清*/
-void upMsgProtGen(u8 *cmdPld, u16 cmdPldLen)
+/*客户叫全程或安全保护,保护针对托盘,代码中叫托盘保护*/
+void upMsgTrayProt(u8 *cmdPld, u16 cmdPldLen)
 {
     UpProtGenCmd *cmd;
     u16eRspCode rspCode;
 
     cmd = (UpProtGenCmd *)cmdPld;
-    if (RspOk == (rspCode=upProtGenChk(cmd, cmdPldLen))
-        && RspOk == (rspCode=protExpSave(cmdPld)))
+    if (RspOk == (rspCode=upTrayProtChk(cmd, cmdPldLen)))
     {
-        rspCode = upProtGenSave(cmdPld);
+        rspCode = upTrayProtSave(cmdPld);
+    }
+
+    if (RspRepeatDrop == rspCode)
+    {
+        rspCode = RspOk;
     }
     rspUpCmmn(UpCmdIdManuProtGen, cmd->trayIdx, rspCode);
     return;
 }
 
-/*工步保护*/
-void upMsgProtStep(u8 *cmdPld, u16 cmdPldLen)
+/*工步保护,含流程保护*/
+void upMsgStepProt(u8 *cmdPld, u16 cmdPldLen)
 {
     UpProtStepCmd *cmd;
     u16eRspCode rspCode;
 
     cmd = (UpProtStepCmd *)cmdPld;
-    if (RspOk == (rspCode=upProtStepChk(cmd, cmdPldLen)))
+    if (RspOk == (rspCode=upStepProtChk(cmd, cmdPldLen)))
     {
-        rspCode = upProtStepSave(cmdPld);
+        rspCode = upStepProtSave(cmdPld);
+    }
+
+    if (RspRepeatDrop == rspCode)
+    {
+        rspCode = RspOk;
     }
     rspUpCmmn(UpCmdIdManuProtStep, cmd->trayIdx, rspCode);
     return;
@@ -868,54 +1017,143 @@ void upMsgSmplNdbd(u8 *cmdPld, u16 cmdPldLen)
     sendUpMsg(buf, pldLenAck, UpCmdIdManuSmplNdbd);
     return;
 }
-void upMsgSmplStack(u8 *cmdPld, u16 cmdPldLen)
-{
-    UpSmplCmd *cmd;
-    UpSmplAck *ack;
-    RunStack *runStack;
-    LoopDscr *loop;
-    u8 *buf;
-    u8 *ackPld;
-    Times time;
-    u16 ackPldLen;
-    u8 cnt;
 
-    if (cmdPldLen != sizeof(UpSmplCmd))
+u16eRspCode upSmplStackChk(UpSmplStackCmd *cmd, u16 pldLen)
+{
+    if (pldLen != sizeof(UpSmplStackCmd) + Align16(cmd->chnAmt)*2
+        || cmd->trayIdx>=gDevMgr->trayAmt)
     {
+        return RspParam;
+    }
+
+    if (0 != cmd->chnAmt)
+    {
+        Tray *tray;
+        Channel *chn;
+        u16 idx;
+        u16 genChnIdx;
+
+        tray = &gDevMgr->tray[cmd->trayIdx];
+        for (idx=0; idx<cmd->chnAmt; idx++)
+        {
+            if (cmd->chnId[idx] >= tray->genChnAmt)
+            {
+                return RspChnIdx;
+            }
+        
+            chn = upChnMap(tray, cmd->chnId[idx], &genChnIdx);
+            if (BoxTypeSeriesWiSw == tray->boxCfg.boxType)
+            {
+                if (0 == genChnIdx)
+                {
+                    return RspChnIdx;
+                }
+            }
+            else
+            {
+                if (0 != genChnIdx)
+                {
+                    return RspChnIdx;
+                }
+            }
+        }
+    }
+    return RspOk;
+}
+
+void upMsgSmplStack(u8 *cmdPld, u16 pldLen)
+{
+    UpSmplStackCmd *cmd;
+    UpSmplStackAck *ack;
+    RunStack *runStack;
+    Tray *tray;
+    Channel *chn;
+    Cell *cell;
+    u8 *buf;
+    u16 ackPldLen;
+    u16 loopDscrLen;
+
+    buf = sendUpBuf;
+    cmd = (UpSmplStackCmd *)cmdPld;
+    ack = (UpSmplStackAck *)(buf + sizeof(UpMsgHead));
+    ack->trayIdx = cmd->trayIdx;
+    ack->rsvd2 = ack->rsvd1 = 0;
+    ack->timeStamp = gAbsTimeSec + sysTimeSecGet();
+    ackPldLen = sizeof(UpSmplStackAck);
+    if (RspOk != (ack->rspCode=upSmplStackChk(cmd, pldLen)))
+    {
+        ack->chnAmt = 0;
+        sendUpMsg(buf, ackPldLen, UpCmdIdManuSmplStack);
         return;
     }
 
-    buf = sendUpBuf;
-    cmd = (UpSmplCmd *)cmdPld;
-
-    ackPld = buf + sizeof(UpMsgHead);
-    ack = (UpSmplAck *)ackPld;
-    ack->rspCode = RspOk;
-    ack->trayIdx = cmd->trayIdx;
-    ack->smplAmt = 1;
-    ack->firstSeq = cmd->smplSeq+1;
-    ack->nextWriteSeq = cmd->smplSeq+1;
-    ackPldLen = sizeof(UpSmplAck);
-
+    tray = &gDevMgr->tray[cmd->trayIdx];
     runStack = ack->runStack;
-    sysTimeGet(&time);
-    runStack->timeStampSec = gAbsTimeSec + time.sec;
-    runStack->timeStampMs = time.mSec;
-    runStack->chnType = ChnTypeMainChn;
-    runStack->flowLoopAmt = 0;
-    runStack->chnIdx = 0;
-    runStack->capacity = 0;
-    ackPldLen += sizeof(RunStack);
-    for (cnt=0; cnt<runStack->flowLoopAmt; cnt++)
+    ack->chnAmt = 0;
+    if (0 == cmd->chnAmt)
     {
-        loop = (LoopDscr *)(ackPld + ackPldLen);
-        loop->stepId = 0;
-        loop->leftAmt = 0;
-        ackPldLen += sizeof(LoopDscr);
+        Channel *chnCri;
+        Cell *cellCri;
+
+        for (chn=tray->chn,chnCri=chn+tray->trayChnAmt; chn<chnCri; chn++)
+        {
+            if (NULL == chn->flowStepEntry)
+            {
+                continue;
+            }
+
+            if (NULL == chn->bypsSeriesInd)
+            {
+                runStack->chnType = ChnTypeMainChn;
+                runStack->flowLoopAmt = chn->flowStepEntry->loopStepAmt;
+                runStack->chnIdx = chn->genIdxInTray;
+                loopDscrLen = runStack->flowLoopAmt*sizeof(LoopDscr);
+                memcpy(runStack->loopDscr, chn->loopDscr, loopDscrLen);
+                ackPldLen += sizeof(RunStack) + loopDscrLen;
+                runStack = (RunStack *)((u8 *)runStack + sizeof(RunStack) + loopDscrLen);
+                ack->chnAmt++;
+            }
+            else
+            {
+                for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++)
+                {
+                    runStack->chnType = ChnTypeSeriesCell;
+                    runStack->flowLoopAmt = chn->flowStepEntry->loopStepAmt;
+                    runStack->chnIdx = cell->genIdxInTray;
+                    loopDscrLen = runStack->flowLoopAmt*sizeof(LoopDscr);
+                    memcpy(runStack->loopDscr, chn->loopDscr, loopDscrLen);
+                    ackPldLen += sizeof(RunStack) + loopDscrLen;
+                    runStack = (RunStack *)((u8 *)runStack + sizeof(RunStack) + loopDscrLen);
+                    ack->chnAmt++;
+                }
+            }
+        }
+    }
+    else
+    {
+        u16 genChnIdx;
+        u16 idx;
+
+        for (idx=0; idx<cmd->chnAmt; idx++)
+        {
+            chn = upChnMap(tray, cmd->chnId[idx], &genChnIdx);
+            if (NULL == chn->flowStepEntry)
+            {
+                continue;
+            }
+
+            runStack->chnType = NULL==chn->bypsSeriesInd ? ChnTypeMainChn : ChnTypeSeriesCell;
+            runStack->flowLoopAmt = chn->flowStepEntry->loopStepAmt;
+            runStack->chnIdx = cmd->chnId[idx];
+            loopDscrLen = runStack->flowLoopAmt*sizeof(LoopDscr);
+            memcpy(runStack->loopDscr, chn->loopDscr, loopDscrLen);
+            ackPldLen += sizeof(RunStack) + loopDscrLen;
+            runStack = (RunStack *)((u8 *)runStack + sizeof(RunStack) + loopDscrLen);
+            ack->chnAmt++;
+        }
     }
 
     sendUpMsg(buf, ackPldLen, UpCmdIdManuSmplStack);
-
     return;
 }
 
@@ -983,6 +1221,13 @@ void upMsgSmplTray(u8 *cmdPld, u16 cmdPldLen)
         smplMgr->smplEnable = True;
         smplMgr->upDiscExpr = False;
         sendUpMsg(buf, pldLenAck, UpCmdIdManuSmplTray);
+
+        /*上位机采到后面了,通知归零*/
+        if (!smplMgr->isLooped && cmd->smplSeq>smplMgr->smplSeqNext)
+        {
+            smplMgr->upSmplRstInd = True;
+            sendUpConnNtfy();
+        }
         return;
     }
 
@@ -991,14 +1236,20 @@ void upMsgSmplTray(u8 *cmdPld, u16 cmdPldLen)
     bufSeq = findSmplBufSeq(cmd->smplSeq, smplMgr);
     if (bufSeq < smplMgr->smplBufAmt)
     {
-        /*memcpy(ack->traySmplRcd, smplMgr->smplBufAddrBase+cmd->smplSeq*smplMgr->smplItemSize, smplMgr->smplItemSize);*/
         memcpy(ack->traySmplRcd, smplMgr->smplBufAddrBase+bufSeq*smplMgr->smplItemSize, smplMgr->smplItemSize);
     }
     else
     {
     #ifdef DebugVersion
     #else
+    #if 1
+        if (Ok != smplDiskRead(tray->trayIdx, 1, ack->traySmplRcd, cmd->smplSeq))
+        {
+            ack->rspCode = RspDiskRead;
+        }
+    #else
         ds_read_file(tray->trayIdx, cmd->smplSeq, 1, ack->traySmplRcd);
+    #endif
     #endif
     }
     pldLenAck += smplMgr->smplItemSize;
@@ -1033,6 +1284,16 @@ u16eRspCode boxStartChk(Box *box)
 }
 u16eRspCode chnStartChk(Channel *chn)
 {
+    if (NULL==chn->flowStepEntry || 0==chn->flowStepEntry->stepAmt)
+    {
+        return RspStep;
+    }
+
+    if (NULL == chn->flowProtEntry)
+    {
+        return RspProt;
+    }
+
     if (chn->chnStateMed >= ChnStaNpWait)
     {
         return RspChnBeRun;
@@ -1060,6 +1321,62 @@ b8 trayHasWarn(Tray *tray)
     }
 
     return False;
+}
+
+u16eRspCode cmmnStartTrayChk(Tray *tray)
+{
+    if (NULL != recvCtrlGet(tray->trayIdx)) /*流程或保护未完成*/
+    {
+        recvCtrlFree(tray->trayIdx);
+        return RspFlow;
+    }
+
+    if (NULL == tray->trayProtEntry)
+    {
+        return RspProt;
+    }
+
+    if (trayHasWarn(tray))
+    {
+        return RspWarn;
+    }
+
+    /*这里plcidx未必有效,不影响.todo,调整为传trayidx*/
+    if (!tmprSmplBeOnline(tray->trayIdx))
+    {
+        return RspDiscTmpr;
+    }
+
+    if (BoxModeManu != tray->trayWorkMode)
+    {
+        return RspNdbdMntn;
+    }
+
+    if (!trayNdbdBeOnline(tray->plcIdx))
+    {
+        return RspDiscNdbd;
+    }
+    else
+    {
+        if (1 == tray->ndbdData.status[NdbdStaWorkMode])
+        {
+            return RspNdbdMntn;
+        }
+        else
+        {
+            u8eNdbdWarnType ndbdWarnIdx;
+
+            for (ndbdWarnIdx=0; ndbdWarnIdx<NdbdWarnCri; ndbdWarnIdx++)
+            {
+                if (tray->ndbdData.warn[ndbdWarnIdx])
+                {
+                    return RspWarn;
+                }
+            }
+        }
+    }
+
+    return RspOk;
 }
 
 u16eRspCode upMsgStartChnChk(UpFlowCtrlCmd *upCmd, Tray *tray)
@@ -1102,18 +1419,13 @@ u16eRspCode upMsgStartChnChk(UpFlowCtrlCmd *upCmd, Tray *tray)
                 return RspChnIdx;
             }
 
-        #ifdef TmpStepSave
-            if (chnInd->stepId >= gTmpStepAmt[upCmd->trayIdx])
-        #else
-            if (chnInd->stepId >= chn->flowEntry->stepAmt)
-        #endif
-            {
-                return RspStep;
-            }
-
             chn = upChnMap(tray, chnInd->chnId, &genChnIdx);
             if (BoxTypeSeriesWiSw == tray->boxCfg.boxType)
             {
+                if (0 == genChnIdx)
+                {
+                    return RspChnIdx;
+                }
             }
             else
             {
@@ -1121,6 +1433,11 @@ u16eRspCode upMsgStartChnChk(UpFlowCtrlCmd *upCmd, Tray *tray)
                 {
                     return RspChnIdx;
                 }
+            }
+
+            if (NULL==chn->flowStepEntry || chnInd->stepId>=chn->flowStepEntry->stepAmt)
+            {
+                return RspStep;
             }
 
             if (RspOk!=(rspCode = boxStartChk(chn->box)) || RspOk!=(rspCode = chnStartChk(chn)))
@@ -1136,6 +1453,8 @@ u16eRspCode upMsgStartChnChk(UpFlowCtrlCmd *upCmd, Tray *tray)
 u16eRspCode upMsgFlowStartChk(UpFlowCtrlCmd *upCmd, u16 pldLen, DevMgr *dev)
 {
     Tray *tray;
+    u16eRspCode rspCode;
+    u8 idx;
 
     if (pldLen != sizeof(UpFlowCtrlCmd) + upCmd->chnAmt*sizeof(UpStartChnInd)
         || upCmd->trayIdx>=dev->trayAmt)
@@ -1144,24 +1463,9 @@ u16eRspCode upMsgFlowStartChk(UpFlowCtrlCmd *upCmd, u16 pldLen, DevMgr *dev)
     }
 
     tray = &dev->tray[upCmd->trayIdx];
-    if (trayHasWarn(tray))
+    if (RspOk != (rspCode = cmmnStartTrayChk(tray)))
     {
-        return RspWarn;
-    }
-
-    /*这里plcidx未必有效,不影响.todo,调整为传trayidx*/
-    if (!tmprSmplBeOnline(tray->trayIdx))
-    {
-        return RspDiscTmpr;
-    }
-
-    if (!trayNdbdBeOnline(tray->plcIdx))
-    {
-        return RspDiscNdbd;
-    }
-    else if (1 == tray->ndbdData.status[NdbdStaWorkMode])
-    {
-        return RspNdbdMntn;
+        return rspCode;
     }
 
     return upMsgStartChnChk(upCmd, tray);
@@ -1176,7 +1480,9 @@ void upMsgFlowStart(u8 *pld, u16 pldLen)
     Tray *tray;
     Box *box;
     Box *boxCri;
-    UpStepInfo *step;
+    ChainS *chain;
+    StepNode *stepNode;
+    StepObj *step;
     u16 rspCode;
 
     dev = gDevMgr;
@@ -1186,26 +1492,33 @@ void upMsgFlowStart(u8 *pld, u16 pldLen)
         goto rspUp;
     }
 
-    if (NULL != recvCtrlGet()) /*流程或保护未完成*/
-    {
-        recvCtrlFree();
-        rspCode = RspStep;
-        goto rspUp;
-    }
-
     tray = &dev->tray[upCmd->trayIdx];
-    step = (UpStepInfo *)getChnStepInfo(upCmd->trayIdx, 0);
-    if (0 == upCmd->chnAmt)
+    if (0 == upCmd->chnAmt)  /*整盘*/
     {
         Channel *chnCri;
 
+        if (BoxTypeParallel != tray->boxCfg.boxType)
+        {
+            Cell *cell;
+            Cell *cellCri;
+
+            for (cell=tray->cell,cellCri=cell+tray->trayCellAmt; cell<cellCri; cell++)
+            {
+                cell->chnProtBuf.idleProtEna = True;
+            }
+        }
+
         for (chn=tray->chn,chnCri=&tray->chn[tray->trayChnAmt]; chn<chnCri; chn++)
         {
-            chn->idleProtEna = True;
+            chain = chn->flowStepEntry->stepList.next;
+            stepNode = Container(StepNode, chain, chain);
+            step = stepNode->stepObj;
+            chn->chnProtBuf.idleProtEna = True;
             if (Ok == chnProtReverse(chn))
             {
-                chn->stepIdTmp = 0;
-                chn->stepTypeTmp = chn->upStepType = step->stepType;
+                chn->chnStepId = 0;
+                chn->crntStepNode = stepNode;
+                chn->chnStepType = chn->upStepType = step->stepType;
                 chn->capFlowCrnt = 0;
                 chn->capLow = 0;
                 chn->capStep = 0;
@@ -1215,7 +1528,30 @@ void upMsgFlowStart(u8 *pld, u16 pldLen)
                 chn->capDisChgTtl = 0;
                 chn->chgTypePre = ChgTypeCri;
                 chnStepSwPre(chn);
-                if (Ok == trayNpChnAlloc(tray, chn, 0))
+                if (NULL != chn->bypsSeriesInd)  /*旁路*/
+                {
+                    BypsSeriesInd *seriesInd;
+                    u8 idx;
+
+                    seriesInd = chn->bypsSeriesInd;
+                    memset(seriesInd, 0, sizeof(BypsSeriesInd));
+                    seriesInd->needStart = True;
+                    for (idx=0; idx<chn->chnCellAmt; idx++)
+                    {
+                        BitSet(seriesInd->startCell, idx);
+                        BitSet(seriesInd->runCell, idx);
+                    }
+                }
+
+                if (0 == getStepEndTime(stepNode->stepObj))
+                {
+                    /*如果工步截止时间为零,需要跳下个工步,并生成一条数据*/
+                    /*不能直接发下个工步,等下条采样生成工步数据,再发下个工步*/
+                    chn->chnStateMed = ChnStaMedEnd;
+                    continue;
+                }
+
+                if (Ok == trayNpChnAlloc(tray, chn))
                 {
                     chn->chnStateMed = ChnStaStart;
                     boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStart);
@@ -1227,7 +1563,7 @@ void upMsgFlowStart(u8 *pld, u16 pldLen)
             }
         }
     }
-    else
+    else if (BoxTypeSeriesWiSw != tray->boxCfg.boxType)
     {
         UpStartChnInd *chnInd;
         UpStartChnInd *sentry;
@@ -1236,11 +1572,25 @@ void upMsgFlowStart(u8 *pld, u16 pldLen)
         for (chnInd=upCmd->startInd,sentry=&upCmd->startInd[upCmd->chnAmt]; chnInd<sentry; chnInd++)
         {
             chn = upChnMap(tray, chnInd->chnId, &genChnIdx);
-            chn->idleProtEna = True;
+            chain = chn->flowStepEntry->stepList.next;
+            stepNode = Container(StepNode, chain, chain);
+            step = stepNode->stepObj;
+            chn->chnProtBuf.idleProtEna = True;
+            if (NULL != chn->cell)
+            {
+                Cell *cell;
+                Cell *cellCri;
+
+                for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++)
+                {
+                    cell->chnProtBuf.idleProtEna = True;
+                }
+            }
             if (Ok == chnProtReverse(chn))
             {
-                chn->stepIdTmp = 0;
-                chn->stepTypeTmp = chn->upStepType = step->stepType;
+                chn->chnStepId = 0;
+                chn->crntStepNode = stepNode;
+                chn->chnStepType = chn->upStepType = step->stepType;
                 chn->capFlowCrnt = 0;
                 chn->capLow = 0;
                 chn->capStep = 0;
@@ -1249,9 +1599,15 @@ void upMsgFlowStart(u8 *pld, u16 pldLen)
                 chn->capChgTtl = 0;
                 chn->capDisChgTtl = 0;
                 chn->chgTypePre = ChgTypeCri;
-                chn->stepRunTimeBase = 0;
                 chnStepSwPre(chn);
-                if (Ok == trayNpChnAlloc(tray, chn, 0))
+                if (0 == getStepEndTime(stepNode->stepObj))
+                {
+                    /*如果工步截止时间为零,需要跳下个工步,并生成一条数据*/
+                    /*不能直接发下个工步,等下条采样生成工步数据,再发下个工步*/
+                    chn->chnStateMed = ChnStaMedEnd;
+                    continue;
+                }
+                if (Ok == trayNpChnAlloc(tray, chn))
                 {
                     chn->chnStateMed = ChnStaStart;
                     boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStart);
@@ -1259,6 +1615,77 @@ void upMsgFlowStart(u8 *pld, u16 pldLen)
                 else
                 {
                     chn->chnStateMed = ChnStaNpWait;
+                }
+            }
+        }
+    }
+    else  /*旁路串联的按电芯启动*/
+    {
+        UpStartChnInd *chnInd;
+        UpStartChnInd *sentry;
+        Channel *chnCri;
+        BypsSeriesInd *seriesInd;
+        u16 genChnIdx;
+
+        for (chn=tray->chn,chnCri=&tray->chn[tray->trayChnAmt]; chn<chnCri; chn++)
+        {
+            chn->bypsSeriesInd->needStart = False;
+        }
+
+        for (chnInd=upCmd->startInd,sentry=&upCmd->startInd[upCmd->chnAmt]; chnInd<sentry; chnInd++)
+        {
+            chn = upChnMap(tray, chnInd->chnId, &genChnIdx);
+            seriesInd = chn->bypsSeriesInd;
+            if (!seriesInd->needStart)
+            {
+                memset(seriesInd, 0, sizeof(BypsSeriesInd));
+                seriesInd->needStart = True;
+            }
+
+            genChnIdx -= 1;
+            BitSet(seriesInd->startCell, genChnIdx);
+            BitSet(seriesInd->runCell, genChnIdx);
+            chn->cell[genChnIdx].chnProtBuf.idleProtEna = True;
+        }
+
+        for (chn=tray->chn,chnCri=&tray->chn[tray->trayChnAmt]; chn<chnCri; chn++)
+        {
+            if (chn->bypsSeriesInd->needStart)
+            {
+                chn->chnProtBuf.idleProtEna = True;
+                chain = chn->flowStepEntry->stepList.next;
+                stepNode = Container(StepNode, chain, chain);
+                step = stepNode->stepObj;
+                if (Ok == chnProtReverse(chn))
+                {
+                    chn->chnStepId = 0;
+                    chn->crntStepNode = stepNode;
+                    chn->chnStepType = chn->upStepType = step->stepType;
+                    chn->capFlowCrnt = 0;
+                    chn->capLow = 0;
+                    chn->capStep = 0;
+                    chn->capCtnu = 0;
+                    chn->stepRunTimeCtnu = 0;
+                    chn->capChgTtl = 0;
+                    chn->capDisChgTtl = 0;
+                    chn->chgTypePre = ChgTypeCri;
+                    chnStepSwPre(chn);
+                    if (0 == getStepEndTime(stepNode->stepObj))
+                    {
+                        /*如果工步截止时间为零,需要跳下个工步,并生成一条数据*/
+                        /*不能直接发下个工步,等下条采样生成工步数据,再发下个工步*/
+                        chn->chnStateMed = ChnStaMedEnd;
+                        continue;
+                    }
+                    if (Ok == trayNpChnAlloc(tray, chn))
+                    {
+                        chn->chnStateMed = ChnStaStart;
+                        boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStart);
+                    }
+                    else
+                    {
+                        chn->chnStateMed = ChnStaNpWait;
+                    }
                 }
             }
         }
@@ -1301,6 +1728,14 @@ u16eRspCode upMsgFlowStopChk(UpFlowCtrlCmd *upCmd, u16 pldLen, DevMgr *dev)
         chn = upChnMap(tray, upCmd->chnId[idx], &chnIdx);
         if (BoxTypeSeriesWiSw == tray->boxCfg.boxType)
         {
+            if (0 == chnIdx)
+            {
+                return RspChnIdx;
+            }
+            else if (ChnStaRun != chn->chnStateMed)
+            {
+                return RspChnWoRun;
+            }
         }
         else
         {
@@ -1330,13 +1765,6 @@ void upMsgFlowPause(u8 *pld, u16 pldLen)
         goto rspUp;
     }
 
-    if (NULL != recvCtrlGet()) /*流程或保护未完成*/
-    {
-        recvCtrlFree();
-        rspCode = RspStep;
-        goto rspUp;
-    }
-
     tray = &dev->tray[upCmd->trayIdx];
     if (0 == upCmd->chnAmt)
     {
@@ -1358,10 +1786,19 @@ void upMsgFlowPause(u8 *pld, u16 pldLen)
             {
                 chn->chnStateMed = ChnStaUpPauseNpReq;
             }
+
+            if (NULL != chn->bypsSeriesInd)
+            {
+                BypsSeriesInd *seriesInd;
+
+                seriesInd = chn->bypsSeriesInd;
+                seriesInd->pausedCell = seriesInd->startCell & ~seriesInd->stopedCell;
+                seriesInd->stopingCell = seriesInd->startCell;
+            }
             trayNpChnFree(tray, chn);
         }
     }
-    else
+    else if (BoxTypeSeriesWiSw != tray->boxCfg.boxType)
     {
         u16 idx;
         u16 chnIdx;
@@ -1383,6 +1820,23 @@ void upMsgFlowPause(u8 *pld, u16 pldLen)
             {
                 chn->chnStateMed = ChnStaUpPauseNpReq;
             }
+            trayNpChnFree(tray, chn);
+        }
+    }
+    else  /*暂停指定电芯视同暂停整串,目前也限定在运行态允许暂停*/
+    {
+        BypsSeriesInd *seriesInd;
+        u16 idx;
+        u16 genChnIdx;
+
+        for (idx=0; idx<upCmd->chnAmt; idx++)
+        {
+            chn = upChnMap(tray, upCmd->chnId[idx], &genChnIdx);
+            seriesInd = chn->bypsSeriesInd;
+            seriesInd->pausedCell = seriesInd->startCell & ~seriesInd->stopedCell;
+            seriesInd->stopingCell = seriesInd->startCell;
+            chn->chnStateMed = ChnStaUpPauseReq;
+            boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStop);
             trayNpChnFree(tray, chn);
         }
     }
@@ -1417,7 +1871,7 @@ void upMsgFlowStop(u8 *pld, u16 pldLen)
     }
 
     tray = &dev->tray[upCmd->trayIdx];
-    if (0 == upCmd->chnAmt) /*todo,识别出那些跑的去停而不是全停*/
+    if (0 == upCmd->chnAmt)
     {
         Channel *chnCri;
 
@@ -1437,16 +1891,25 @@ void upMsgFlowStop(u8 *pld, u16 pldLen)
             {
                 chn->chnStateMed = ChnStaUpStopNpReq;
             }
-            else if (ChnStaPause==chn->chnStateMed || ChnStaStop==chn->chnStateMed)
+            else if (ChnStaPause == chn->chnStateMed)
             {
                 chn->chnStateMed = ChnStaIdle;
-                chn->stepIdTmp = StepIdNull;
-                chn->stepTypeTmp = StepTypeNull;
+                chn->chnStepId = StepIdNull;
+                chn->chnStepType = StepTypeNull;
+            }
+
+            if (NULL != chn->bypsSeriesInd)
+            {
+                BypsSeriesInd *seriesInd;
+
+                seriesInd = chn->bypsSeriesInd;
+                seriesInd->stopingCell = seriesInd->stopedCell = seriesInd->startCell;
+                seriesInd->pausedCell = 0;
             }
             trayNpChnFree(tray, chn);
         }
     }
-    else /*todo,识别出那些跑的去停而不是全停*/
+    else if (BoxTypeSeriesWiSw != tray->boxCfg.boxType)
     {
         u16 idx;
         u16 chnIdx;
@@ -1468,13 +1931,34 @@ void upMsgFlowStop(u8 *pld, u16 pldLen)
             {
                 chn->chnStateMed = ChnStaUpStopNpReq;
             }
-            else if (ChnStaPause==chn->chnStateMed || ChnStaStop==chn->chnStateMed)
+            else if (ChnStaPause == chn->chnStateMed)
             {
                 chn->chnStateMed = ChnStaIdle;
-                chn->stepIdTmp = StepIdNull;
-                chn->stepTypeTmp = StepTypeNull;
+                chn->chnStepId = StepIdNull;
+                chn->chnStepType = StepTypeNull;
             }
             trayNpChnFree(tray, chn);
+        }
+    }
+    else  /*指定电芯停止目前只用于测试,所以限定在运行态才允许*/
+    {
+        u16 idx;
+        u16 genChnIdx;
+        BypsSeriesInd *seriesInd;
+
+        for (idx=0; idx<upCmd->chnAmt; idx++)
+        {
+            chn = upChnMap(tray, upCmd->chnId[idx], &genChnIdx);
+            boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStop);
+            genChnIdx -= 1;
+            seriesInd = chn->bypsSeriesInd;
+            BitSet(seriesInd->stopingCell, genChnIdx);
+            BitSet(seriesInd->stopedCell, genChnIdx);
+            BitClr(seriesInd->pausedCell, genChnIdx);
+            BitClr(seriesInd->runCell, genChnIdx);
+            BitClr(seriesInd->nmlEndCell, genChnIdx);
+            BitClr(seriesInd->endingCell, genChnIdx);
+            BitClr(seriesInd->waitCell, genChnIdx);
         }
     }
 
@@ -1539,43 +2023,36 @@ u16eRspCode upMsgFlowStackChk(UpFlowCtrlCmd *upCmd, u16 pldLen, DevMgr *dev)
     UpCtnuChnlInd *chnInd;
     UpCtnuChnlInd *sentry;
     Channel *chn;
-    UpStepInfo *step;
+    Channel *chnCri;
+    StepObj *step;
+    StepNode *stepNode;
+    ChainS *chain;
+    u16eRspCode rspCode;
+    u16 hopePldLen;
+    u8 loopIdx;
 
-    if (pldLen != sizeof(UpFlowCtrlCmd) + upCmd->chnAmt*sizeof(UpCtnuChnlInd)
-        || upCmd->trayIdx>=dev->trayAmt)
+    hopePldLen = sizeof(UpFlowCtrlCmd) + upCmd->chnAmt*sizeof(UpCtnuChnlInd);
+    if (pldLen<hopePldLen || upCmd->trayIdx>=dev->trayAmt)
     {
         return RspParam;
     }
 
     tray = &dev->tray[upCmd->trayIdx];
-    if (trayHasWarn(tray))
+    if (RspOk != (rspCode = cmmnStartTrayChk(tray)))
     {
-        return RspWarn;
-    }
-
-    /*这里plcidx未必有效,不影响.todo,调整为传trayidx*/
-    if (!tmprSmplBeOnline(tray->trayIdx))
-    {
-        return RspDiscTmpr;
-    }
-
-    if (!trayNdbdBeOnline(tray->plcIdx))
-    {
-        return RspDiscNdbd;
-    }
-    else if (1 == tray->ndbdData.status[NdbdStaWorkMode])
-    {
-        return RspNdbdMntn;
+        return rspCode;
     }
 
     if (0 == upCmd->chnAmt)
     {
+        return RspChnIdx; /*todo,增加整盘续接*/
     }
     else
     {
         u16 chnIdx;
+        u16 chnCnt;
 
-        for (chnInd=upCmd->ctnuInd,sentry=chnInd+upCmd->chnAmt; chnInd<sentry; chnInd++)
+        for (chnInd=upCmd->ctnuInd, chnCnt=0; chnCnt<upCmd->chnAmt; chnCnt++)
         {
             if (chnInd->chnId >= tray->genChnAmt)
             {
@@ -1585,6 +2062,10 @@ u16eRspCode upMsgFlowStackChk(UpFlowCtrlCmd *upCmd, u16 pldLen, DevMgr *dev)
             chn = upChnMap(tray, chnInd->chnId, &chnIdx);
             if (BoxTypeSeriesWiSw == tray->boxCfg.boxType)
             {
+                if (0 == chnIdx)
+                {
+                    return RspChnIdx;
+                }
             }
             else
             {
@@ -1594,18 +2075,57 @@ u16eRspCode upMsgFlowStackChk(UpFlowCtrlCmd *upCmd, u16 pldLen, DevMgr *dev)
                 }
             }
 
-            step = (UpStepInfo *)getChnStepInfo(upCmd->trayIdx, chnInd->ctnuStepId);
-            if (NULL==step || getStepTime(upCmd->trayIdx, chnInd->ctnuStepId)<chnInd->stepRestTime)
+            if (RspOk!=(rspCode = boxStartChk(chn->box)) || RspOk!=(rspCode = chnStartChk(chn)))
+            {
+                return rspCode;
+            }
+
+            if (chnInd->loopAmt != chn->flowStepEntry->loopStepAmt)
+            {
+                return RspLoopAmt;
+            }
+
+            hopePldLen += chnInd->loopAmt * sizeof(LoopDscr);
+            if (pldLen < hopePldLen)
+            {
+                return RspParam;
+            }
+
+            for (loopIdx=0; loopIdx<chnInd->loopAmt; loopIdx++)
+            {
+                stepNode = findStepNode(chn->flowStepEntry, chn->loopDscr[loopIdx].loopStepId);
+                step = stepNode->stepObj;
+                if (chnInd->loopDscr[loopIdx].loopStepId != chn->loopDscr[loopIdx].loopStepId
+                    || chnInd->loopDscr[loopIdx].jumpAmt > step->stepParam[1])
+                {
+                    return RspLoopParam;
+                }
+            }
+
+            stepNode = findStepNode(chn->flowStepEntry, chnInd->ctnuStepId);
+            if (NULL == stepNode)
+            {
+                return RspStep;
+            }
+            step = stepNode->stepObj;
+            if (StepTypeLoop==step->stepType || getStepEndTime(step)<chnInd->stepRestTime)
             {
                 return RspParam;
             }
             if (0 == chnInd->stepRestTime)
             {
-                if (NULL == getChnStepInfo(upCmd->trayIdx, chnInd->ctnuStepId+1))
+                if (NULL == getNxtStep(chn, stepNode, False))
                 {
-                    return RspParam;
+                    return RspStep;
                 }
             }
+
+            chnInd = (UpCtnuChnlInd *)(&chnInd->loopDscr[chnInd->loopAmt]);
+        }
+
+        if (pldLen != hopePldLen)
+        {
+            return RspParam;
         }
     }
     return RspOk;
@@ -1615,8 +2135,6 @@ void upMsgFlowStack(u8 *pld, u16 pldLen)
 {
     UpFlowCtrlCmd *upCmd;
     UpCtnuChnlInd *chnInd;
-    UpCtnuChnlInd *sentry;
-    UpStepInfo *step;
     Box *box;
     Box *boxCri;
     DevMgr *dev;
@@ -1624,6 +2142,7 @@ void upMsgFlowStack(u8 *pld, u16 pldLen)
     Tray *tray;
     u16 rspCode;
     u8 stepIdx;
+    u8 loopIdx;
 
     dev = gDevMgr;
     upCmd = (UpFlowCtrlCmd *)pld;
@@ -1632,62 +2151,77 @@ void upMsgFlowStack(u8 *pld, u16 pldLen)
         goto rspUp;
     }
 
-    if (NULL != recvCtrlGet()) /*流程或保护未完成*/
-    {
-        recvCtrlFree();
-        rspCode = RspStep;
-        goto rspUp;
-    }
-
     tray = &dev->tray[upCmd->trayIdx];
     if (0 == upCmd->chnAmt)
     {
     }
-    else
+    else if (BoxTypeSeriesWiSw != tray->boxCfg.boxType)
     {
-        u16 chnIdx;
+        StepNode *stepNode;
+        u16 genChnIdx;
+        u16 chnCnt;
 
-        for (chnInd=upCmd->ctnuInd,sentry=chnInd+upCmd->chnAmt; chnInd<sentry; chnInd++)
+        for (chnInd=upCmd->ctnuInd, chnCnt=0; chnCnt<upCmd->chnAmt; chnCnt++)
         {
-            chn = upChnMap(tray, chnInd->chnId, &chnIdx);
-            if (ChnStaStop!=chn->chnStateMed && ChnStaPause!=chn->chnStateMed)
+            chn = upChnMap(tray, chnInd->chnId, &genChnIdx);
+        #if 0  /*目前不检查暂停态,空闲态也能续接*/
+            if (ChnStaPause != chn->chnStateMed)
             {
                 continue;
             }
+        #endif 
 
-            if (0==chnInd->stepRestTime || getStepCap(upCmd->trayIdx, chnInd->ctnuStepId)<=chn->capCtnu)
+            if (0 == chnInd->stepRestTime)
             {
-                chn->stepIdTmp = chnInd->ctnuStepId + 1;
+                stepNode = findStepNode(chn->flowStepEntry, chnInd->ctnuStepId);
+                chn->crntStepNode = getNxtStep(chn, stepNode, True);
+                chn->chnStepId = chn->crntStepNode->stepId;
                 chn->stepRunTimeCtnu = 0;
                 chn->capStep = chn->capCtnu = 0;
             }
             else
             {
-                chn->stepIdTmp = chnInd->ctnuStepId;
-                chn->stepRunTimeCtnu = getStepTime(upCmd->trayIdx, chnInd->ctnuStepId) - chnInd->stepRestTime;
+                chn->chnStepId = chnInd->ctnuStepId;
+                chn->crntStepNode = findStepNode(chn->flowStepEntry, chn->chnStepId);
+                chn->stepRunTimeCtnu = getStepEndTime(chn->crntStepNode->stepObj) - chnInd->stepRestTime;
                 chn->capStep = chn->capCtnu = chnInd->capStep;
             }
 
-            chn->capFlowCrnt = chnInd->capFlowCrnt;
-            for (stepIdx=chn->stepIdTmp; StepIdNull!=stepIdx; stepIdx--)
+            for (loopIdx=0; loopIdx<chnInd->loopAmt; loopIdx++)
             {
-                chn->chgTypePre = getChgType(chn, stepIdx);
+                chn->loopDscr[loopIdx].jumpAmt = chnInd->loopDscr[loopIdx].jumpAmt;
+            }
+
+            chn->capFlowCrnt = chnInd->capFlowCrnt;
+            for (stepIdx=chn->chnStepId; StepIdNull!=stepIdx; stepIdx--)
+            {
+                stepNode = findStepNode(chn->flowStepEntry, stepIdx);
+                chn->chgTypePre = stepType2ChgType(stepNode->stepObj->stepType);
                 if (ChgTypeCri != chn->chgTypePre)
                 {
                     break;
                 }
             }
 
-            chn->idleProtEna = True;
+            chn->chnProtBuf.idleProtEna = True;
+            if (NULL != chn->cell)
+            {
+                Cell *cell;
+                Cell *cellCri;
+
+                for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++)
+                {
+                    cell->chnProtBuf.idleProtEna = True;
+                }
+            }
             if (Ok == chnProtReverse(chn))
             {
-                step = (UpStepInfo *)getChnStepInfo(upCmd->trayIdx, chn->stepIdTmp);
-                chn->stepTypeTmp = chn->upStepType = step->stepType;
+                chn->chnStepType = chn->upStepType = chn->crntStepNode->stepObj->stepType;
                 chn->capLow = 0;
                 chn->capChgTtl = 0;
                 chn->capDisChgTtl = 0;
                 chnStepSwPre(chn);
-                if (Ok == trayNpChnAlloc(tray, chn, chn->stepIdTmp))
+                if (Ok == trayNpChnAlloc(tray, chn))
                 {
                     chn->chnStateMed = ChnStaStart;
                     boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStart);
@@ -1695,6 +2229,111 @@ void upMsgFlowStack(u8 *pld, u16 pldLen)
                 else
                 {
                     chn->chnStateMed = ChnStaNpWait;
+                }
+            }
+
+            chnInd = (UpCtnuChnlInd *)(&chnInd->loopDscr[chnInd->loopAmt]);
+        }
+    }
+    else  /*todo,,先完全独立以免影响,之后合并上面*/
+    {
+        StepNode *stepNode;
+        Channel *chnCri;
+        BypsSeriesInd *seriesInd;
+        u16 genChnIdx;
+        u16 chnCnt;
+
+        for (chn=tray->chn,chnCri=&tray->chn[tray->trayChnAmt]; chn<chnCri; chn++)
+        {
+            chn->bypsSeriesInd->needStart = False;
+        }
+
+        for (chnInd=upCmd->ctnuInd, chnCnt=0; chnCnt<upCmd->chnAmt; chnCnt++)
+        {
+            chn = upChnMap(tray, chnInd->chnId, &genChnIdx);
+            genChnIdx -= 1;
+            seriesInd = chn->bypsSeriesInd;
+            chn->cell[genChnIdx].chnProtBuf.idleProtEna = True;
+            if (!seriesInd->needStart)
+            {
+                memset(seriesInd, 0, sizeof(BypsSeriesInd));
+                seriesInd->needStart = True;
+                seriesInd->hasCtnuStepId = False;
+            }
+
+            BitSet(seriesInd->startCell, genChnIdx);
+            if (0 == chnInd->stepRestTime)
+            {
+                BitSet(seriesInd->nmlEndCell, genChnIdx);
+            }
+            else
+            {
+                BitSet(seriesInd->runCell, genChnIdx);
+            }
+
+            for (loopIdx=0; loopIdx<chnInd->loopAmt; loopIdx++)
+            {
+                chn->loopDscr[loopIdx].jumpAmt = chnInd->loopDscr[loopIdx].jumpAmt;
+            }
+
+            if (!seriesInd->hasCtnuStepId)
+            {
+                chn->chnStepId = chnInd->ctnuStepId;
+                chn->capFlowCrnt = chnInd->capFlowCrnt;
+                if (0 != chnInd->stepRestTime)
+                {
+                    chn->crntStepNode = findStepNode(chn->flowStepEntry, chn->chnStepId);
+                    chn->stepRunTimeCtnu = getStepEndTime(chn->crntStepNode->stepObj) - chnInd->stepRestTime;
+                    chn->capStep = chn->capCtnu = chnInd->capStep;
+                    seriesInd->hasCtnuStepId = True;
+                }
+            }
+
+            chnInd = (UpCtnuChnlInd *)(&chnInd->loopDscr[chnInd->loopAmt]);
+        }
+
+        for (chn=tray->chn,chnCri=&tray->chn[tray->trayChnAmt]; chn<chnCri; chn++)
+        {
+            if (chn->bypsSeriesInd->needStart)
+            {
+                chn->chnProtBuf.idleProtEna = True;
+                if (!seriesInd->hasCtnuStepId)
+                {
+                    stepNode = findStepNode(chn->flowStepEntry, chn->chnStepId);
+                    chn->crntStepNode = getNxtStep(chn, stepNode, True);
+                    chn->chnStepId = chn->crntStepNode->stepId;
+                    chn->stepRunTimeCtnu = 0;
+                    chn->capStep = chn->capCtnu = 0;
+                    chn->bypsSeriesInd->runCell = chn->bypsSeriesInd->nmlEndCell;
+                    chn->bypsSeriesInd->nmlEndCell = 0;
+                }
+
+                for (stepIdx=chn->chnStepId; StepIdNull!=stepIdx; stepIdx--)
+                {
+                    stepNode = findStepNode(chn->flowStepEntry, stepIdx);
+                    chn->chgTypePre = stepType2ChgType(stepNode->stepObj->stepType);
+                    if (ChgTypeCri != chn->chgTypePre)
+                    {
+                        break;
+                    }
+                }
+
+                if (Ok == chnProtReverse(chn))
+                {
+                    chn->chnStepType = chn->upStepType = chn->crntStepNode->stepObj->stepType;
+                    chn->capLow = 0;
+                    chn->capChgTtl = 0;
+                    chn->capDisChgTtl = 0;
+                    chnStepSwPre(chn);
+                    if (Ok == trayNpChnAlloc(tray, chn))
+                    {
+                        chn->chnStateMed = ChnStaStart;
+                        boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStart);
+                    }
+                    else
+                    {
+                        chn->chnStateMed = ChnStaNpWait;
+                    }
                 }
             }
         }
@@ -1802,7 +2441,7 @@ void upMsgWarnDel(u8 *pldCmd, u16 pldLenCmd)
     tray = &gDevMgr->tray[trayIdx];
     trayProtMgr = &tray->trayProtMgr;
     tray->trayWarnPres = False;
-    memset(trayProtMgr->mixProtHpn, 0, MixExpAmt);
+    memset(trayProtMgr->mixProtHpn, 0, MixExpAmt*sizeof(u32));
     memset(trayProtMgr->policyActNeed, 0, Align8(PolicyCri));
     memset(trayProtMgr->policyActOver, 0, Align8(PolicyCri));
     trayProtMgr->slotTmprCrnt.tmprInvalidCnt = 0;
@@ -1816,7 +2455,6 @@ void upMsgWarnDel(u8 *pldCmd, u16 pldLenCmd)
     for (chn=tray->chn,chnCri=chn+tray->trayChnAmt; chn<chnCri; chn++)
     {
         protBuf = &chn->chnProtBuf;
-        protBuf->preCauseCode = CcNone;
         protBuf->mixSubHpnBitmap = 0;
         protBuf->cellTmprCrnt.tmprInvalidCnt = 0;
         protBuf->idleVolCtnuSmlRiseCnt = 0;
@@ -1825,12 +2463,14 @@ void upMsgWarnDel(u8 *pldCmd, u16 pldLenCmd)
         protBuf->idleCurLeakCnt = 0;
         protBuf->allChnTmprUpLmtCnt = 0;
         protBuf->busyChnTmprLowLmtCnt = 0;
+        protBuf->idleTimeStampSec = sysTimeSecGet();
+        protBuf->idleVolBaseValid = False;
+        protBuf->flowIdleVolIntvlRiseBaseValid = False;
         if (NULL != chn->cell)
         {
             for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++)
             {
                 protBuf = &cell->chnProtBuf;
-                protBuf->preCauseCode = CcNone;
                 protBuf->mixSubHpnBitmap = 0;
                 protBuf->cellTmprCrnt.tmprInvalidCnt = 0;
                 protBuf->idleVolCtnuSmlRiseCnt = 0;
@@ -1839,12 +2479,201 @@ void upMsgWarnDel(u8 *pldCmd, u16 pldLenCmd)
                 protBuf->idleCurLeakCnt = 0;
                 protBuf->allChnTmprUpLmtCnt = 0;
                 protBuf->busyChnTmprLowLmtCnt = 0;
+                protBuf->idleTimeStampSec = sysTimeSecGet();
+                protBuf->idleVolBaseValid = False;
+                protBuf->flowIdleVolIntvlRiseBaseValid = False;
             }
         }
     }
 
     trayNdbdCtrl(trayIdx, NdbdSetWarnDel, 1);
     rspUpCmmn(UpCmdIdManuWarnDel, trayIdx, RspOk);
+    return;
+}
+
+u16eRspCode upMsgSeriesCellSwChk(UpSeriesSwCmd *upCmd, u16 pldLen, DevMgr *dev)
+{
+    Tray *tray;
+    Channel *chn;
+    u16 idx;
+    u16 chnIdx;
+
+    if (pldLen != sizeof(UpFlowCtrlCmd) + Align16(upCmd->chnAmt)*2
+        || upCmd->trayIdx>=dev->trayAmt)
+    {
+        return RspParam;
+    }
+
+    tray = &dev->tray[upCmd->trayIdx];
+    if (BoxTypeSeriesWiSw != tray->boxCfg.boxType)
+    {
+        return RspParam;
+    }
+
+    for (idx=0; idx<upCmd->chnAmt; idx++)
+    {
+        if (upCmd->chnId[idx] >= tray->genChnAmt)
+        {
+            return RspChnIdx;
+        }
+
+        chn = upChnMap(tray, upCmd->chnId[idx], &chnIdx);
+        if (0 == chnIdx)
+        {
+            return RspChnIdx;
+        }
+        else if (chn->chnStateMed > ChnStaPause)
+        {
+            return RspChnWiRun;
+        }
+    }
+
+    return RspOk;
+}
+
+void upMsgSeriesCellSw(u8 *pld, u16 pldLen)
+{
+    UpSeriesSwCmd *upCmd;
+    DevMgr *dev;
+    Tray *tray;
+    Channel *chn;
+    Box *box;
+    Box *boxCri;
+    BypsSeriesInd *seriesInd;
+    u16 rspCode;
+    u8 idx;
+
+    dev = gDevMgr;
+    upCmd = (UpSeriesSwCmd *)pld;
+    if (RspOk != (rspCode=upMsgSeriesCellSwChk(upCmd, pldLen, dev)))
+    {
+        goto rspUp;
+    }
+
+    tray = &dev->tray[upCmd->trayIdx];
+    if (0 == upCmd->chnAmt)
+    {
+        Channel *chnCri;
+
+        for (chn=tray->chn,chnCri=&tray->chn[tray->trayChnAmt]; chn<chnCri; chn++)
+        {
+            seriesInd = chn->bypsSeriesInd;
+            boxCtrlAddSeriesCell(chn->box, chn->chnIdxInBox, upCmd->swInd);
+            if (1 == upCmd->swInd)  /*切入*/
+            {
+                for (idx=0; idx<chn->chnCellAmt; idx++)
+                {
+                    BitSet(seriesInd->idleCutInCell, idx);
+                    BitSet(seriesInd->idleSwCell, idx);
+                }
+            }
+            else
+            {
+                seriesInd->idleCutInCell = 0;
+                for (idx=0; idx<chn->chnCellAmt; idx++)
+                {
+                    BitSet(seriesInd->idleSwCell, idx);
+                }
+            }
+        }
+    }
+    else
+    {
+        u16 genChnIdx;
+
+        for (idx=0; idx<upCmd->chnAmt; idx++)
+        {
+            chn = upChnMap(tray, upCmd->chnId[idx], &genChnIdx);
+            boxCtrlAddSeriesCell(chn->box, chn->chnIdxInBox, upCmd->swInd);
+            seriesInd = chn->bypsSeriesInd;
+            BitSet(seriesInd->idleSwCell, genChnIdx-1);
+            if (1 == upCmd->swInd)  /*切入*/
+            {
+                BitSet(seriesInd->idleCutInCell, idx);
+            }
+            else
+            {
+                BitClr(seriesInd->idleCutInCell, idx);
+            }
+        }
+    }
+
+    for (box=tray->box,boxCri=&tray->box[tray->boxAmt]; box<boxCri; box++)
+    {
+        if (0 != box->seriesSwWaitSend.boxCtrlInd.chnSelectInd)
+        {
+            boxCtrlCellTxTry(box);
+        }
+    }
+
+rspUp:
+    rspUpCmmn(UpCmdIdManuCellSw, upCmd->trayIdx, rspCode);
+    return;
+}
+
+u16eRspCode upMsgRgbCtrlChk(UpRgbCtrlCmd *upCmd, u16 pldLen)
+{
+    u8 rgbInd;
+
+    if (pldLen != sizeof(UpRgbCtrlCmd))
+    {
+        return RspParam;
+    }
+
+    rgbInd = upCmd->rgbInd;
+    if (BitIsSet(rgbInd, 3))
+    {
+        if (BitIsSet(rgbInd, 0) || BitIsSet(rgbInd, 1))
+        {
+            return RspRgbCtrl;
+        }
+    }
+    else
+    {
+        if (!(0==rgbInd || 1==rgbInd || 2==rgbInd || 4==rgbInd))
+        {
+            return RspRgbCtrl;
+        }
+    }
+
+    return RspOk;
+}
+
+void upMsgRgbCtrl(u8 *pld, u16 pldLen)
+{
+    UpRgbCtrlCmd *upCmd;
+    u16 rspCode;
+    b8 buzzer;
+    b8 green;
+    b8 yellow;
+    b8 red;
+
+    upCmd=(UpRgbCtrlCmd *)pld;
+    if (RspOk != (rspCode=upMsgRgbCtrlChk(upCmd, pldLen)))
+    {
+        goto rspUp;
+    }
+
+    green = BitVal(upCmd->rgbInd, 0);
+    yellow = BitVal(upCmd->rgbInd, 1);
+    red = BitVal(upCmd->rgbInd, 2);
+    buzzer = BitVal(upCmd->rgbInd, 3);
+
+    /*目前板子有三组三色灯,一列一灯情况下，三组都点*/
+#ifdef DebugVersion
+#else
+    AlarmLight_Switch(0, yellow, green, red);
+    Buzzer_Switch(0, buzzer);
+
+    AlarmLight_Switch(1, yellow, green, red);
+    Buzzer_Switch(1, buzzer);
+
+    AlarmLight_Switch(2, yellow, green, red);
+    Buzzer_Switch(2, buzzer);
+#endif
+
+rspUp:
+    rspUpCmmn(UpCmdIdManuRgbCtrl, 0, rspCode);
     return;
 }
 
@@ -1860,34 +2689,216 @@ void upMsgDispManu(u8eUpMsgIdManu msgId, u8 *pld, u16 pldLen)
 
 void _____begin_of_upgrade_msg_____(){}
 
-void setCaliAuxCanBuf(CanAuxCmdBuf *auxBuf, Box *box, u16 upMsgId)
+b8 trayBoxMntnAble(u8    trayIdx)
 {
-    auxBuf->box = box;
-    auxBuf->reTxCnt = 0;
-    auxBuf->upMsgFlowSeq = gUpItfCb->upMsgFlowSeq;
-    auxBuf->upCanMsgId = upMsgId;
+    Tray *tray;
+    Channel *chn;
+    Channel *chnCri;
+
+    tray = &gDevMgr->tray[trayIdx];
+    for (chn=tray->chn,chnCri=chn+tray->trayChnAmt; chn<chnCri; chn++)
+    {
+        if (ChnStaIdle != chn->chnStateMed)
+        {
+            return False;
+        }
+    }
+    return True;
+}
+                         
+u16eRspCode upCfgReadChk(UpCfgReadCmd *upCmd, u16 pldLen)
+{
+    if (pldLen!=sizeof(UpCfgReadCmd) || upCmd->devType>=UpUpdDevCri)
+    {
+        return RspParam;
+    }
+
+    if (UpUpdDevBox == upCmd->devType)
+    {
+        Tray *tray;
+
+        if (upCmd->trayIdx >= gDevMgr->trayAmt)
+        {
+            return RspParam;
+        }
+
+        tray = &gDevMgr->tray[upCmd->trayIdx];
+        if (upCmd->devId >= tray->boxAmt)
+        {
+            return RspParam;
+        }
+    }
+
+    return RspOk;
+}
+
+void upMsgCfgRead(u8 *pld, u16 pldLen)
+{
+    UpCfgReadCmd *upCmd;
+    Tray *tray;
+    u16eRspCode rspCode;
+
+    upCmd = (UpCfgReadCmd *)pld;
+    if (RspOk != (rspCode=upCfgReadChk(upCmd, pldLen)))
+    {
+        rspUpCmmn(UpCmdIdUpdCfgRead, upCmd->trayIdx, rspCode);
+        return;
+    }
+
+    if (UpUpdDevBox == upCmd->devType)
+    {
+        CanAuxCmdBuf *auxBuf;
+        BoxMsgHead *boxHead;
+        Box *box;
+
+        if (NULL == (auxBuf = allocAuxCanBuf()))
+        {
+            rspUpCmmn(UpCmdIdUpdCfgRead, upCmd->trayIdx, RspNoRes);
+            return;
+        }
+
+        tray = &gDevMgr->tray[upCmd->trayIdx];
+        box = &tray->box[upCmd->devId];
+        setCaliAuxCanBuf(auxBuf, box, UpCmdIdUpdCfgRead);
+        boxHead = (BoxMsgHead *)auxBuf->msgBuf;
+        boxHead->msgId = BoxMsgCfgRead;
+        boxHead->msgLen = sizeof(BoxMsgHead);
+        boxAuxTxTry(box->canIdx, auxBuf);
+    }
+    else if (UpUpdDevMedium == upCmd->devType)
+    {
+        rspUpCmmn(UpCmdIdUpdCfgRead, upCmd->trayIdx, rspCode); /*todo,,待补充*/
+    }
+
     return;
 }
 
-void setUartBlockBuf(UartBlockCmdBuf *blockBuf, u8 trayIdx, u16 upCmdId, u8 cmmuAddr,
-                         u8eUartDevType uartDevType, u8eUartMsgId uartMsgId)
+u16eRspCode upCfgSetChk(upCfgSetCmd *upCmd, u16 pldLen)
 {
-    UartMsgHead *uartHead;
-    UartCmmnCmd *uartCmd;
+    u16 hopePldLen;
 
-    blockBuf->trayIdx = trayIdx;
-    blockBuf->reTxCnt = 0;
-    blockBuf->upMsgFlowSeq = gUpItfCb->upMsgFlowSeq;
-    blockBuf->upUartMsgId = upCmdId;
-    blockBuf->uartCmmuAddr = cmmuAddr;
+    hopePldLen = sizeof(upCfgSetCmd);
+    if (pldLen<=hopePldLen || upCmd->devType>=UpUpdDevCri)
+    {
+        return RspParam;
+    }
 
-    uartHead = (UartMsgHead *)blockBuf->msgBuf;
-    uartHead->devAddr = cmmuAddr;
-    uartHead->funcCode = UartFuncCode;
+    if (UpUpdDevBox == upCmd->devType)
+    {
+        Tray *tray;
+        UpCfgTlv *cfgTlv;
+        u8 tlvSize;
+        u8eBoxCfgType cfgType;
 
-    uartCmd = (UartCmmnCmd *)uartHead->payload;
-    uartCmd->devType = uartDevType;
-    uartCmd->msgId = uartMsgId;
+        if (upCmd->trayIdx >= gDevMgr->trayAmt)
+        {
+            return RspParam;
+        }
+
+        tray = &gDevMgr->tray[upCmd->trayIdx];
+        if (upCmd->devId >= tray->boxAmt)
+        {
+            return RspParam;
+        }
+
+        for (; hopePldLen<pldLen; hopePldLen+=tlvSize)
+        {
+            cfgTlv = (UpCfgTlv *)((u8 *)upCmd + hopePldLen);
+            if (cfgTlv->cfgType<0x0100 || cfgTlv->cfgType>0x0109)
+            {
+                return RspParam;
+            }
+
+            cfgType = cfgTlv->cfgType - BoxCfgBase;
+            tlvSize = BoxCfgVolRise==cfgType||BoxCfgCurDown==cfgType ? 16 : 12;
+            if (tlvSize != cfgTlv->cfgLen+sizeof(UpCfgTlv))
+            {
+                return RspParam;
+            }
+            if (16 == tlvSize)
+            {
+                if (cfgTlv->cfgVal[1]>65535 || cfgTlv->cfgVal[2]>65535)
+                {
+                    return RspParam;
+                }
+            }
+        }
+
+        if (pldLen != hopePldLen)
+        {
+            return RspParam;
+        }
+    }
+
+    return RspOk;
+}
+
+void upMsgCfgSet(u8 *pld, u16 pldLen)
+{
+    upCfgSetCmd *upCmd;
+    Tray *tray;
+    u16eRspCode rspCode;
+
+    upCmd = (upCfgSetCmd *)pld;
+    if (RspOk != (rspCode=upCfgSetChk(upCmd, pldLen)))
+    {
+        rspUpCmmn(UpCmdIdUpdCfgSet, upCmd->trayIdx, rspCode);
+        return;
+    }
+
+    if (UpUpdDevBox == upCmd->devType)
+    {
+        CanAuxCmdBuf *auxBuf;
+        BoxMsgHead *boxHead;
+        BoxCfgInd *boxCmd;
+        Box *box;
+        UpCfgTlv *tlv;
+        UpCfgTlv *sentry;
+        u32 *param;
+        u8eBoxCfgType cfgType;
+
+        if (NULL == (auxBuf = allocAuxCanBuf()))
+        {
+            rspUpCmmn(UpCmdIdUpdCfgSet, upCmd->trayIdx, RspNoRes);
+            return;
+        }
+
+        tray = &gDevMgr->tray[upCmd->trayIdx];
+        box = &tray->box[upCmd->devId];
+        setCaliAuxCanBuf(auxBuf, box, UpCmdIdUpdCfgSet);
+        boxHead = (BoxMsgHead *)auxBuf->msgBuf;
+        boxHead->msgId = BoxMsgCfgSet;
+        boxHead->msgLen = sizeof(BoxMsgHead) + sizeof(BoxCfgInd);
+        boxCmd = (BoxCfgInd *)boxHead->payload;
+        boxCmd->funcEnable = boxCmd->funcSelect = 0;
+        sentry = (UpCfgTlv *)(pld+pldLen);
+        for (tlv=upCmd->cfgTlv,param=boxCmd->param; tlv<sentry; tlv=(UpCfgTlv *)((u8 *)(tlv+1) + tlv->cfgLen))
+        {
+            cfgType = tlv->cfgType - BoxCfgBase;
+            BitSet(boxCmd->funcSelect, cfgType);
+            if (0 != (tlv->cfgVal[0] & 0xff))
+            {
+                BitSet(boxCmd->funcEnable, cfgType);
+                *param = tlv->cfgVal[1];
+                if (12 == tlv->cfgLen) /*使能+两个参数*/
+                {
+                    *param /= 1000;  /*ms-->s*/
+                    *param &= 0xffff;  /*前两个字节时间*/
+                    *param += tlv->cfgVal[2] << 16;  /*后两字节压差或流差*/
+                }
+
+                param++;
+                boxHead->msgLen += sizeof(u32);
+            }
+        }
+
+        boxAuxTxTry(box->canIdx, auxBuf);
+    }
+    else if (UpUpdDevMedium == upCmd->devType)
+    {
+        rspUpCmmn(UpCmdIdUpdCfgSet, upCmd->trayIdx, rspCode); /*todo,,待补充*/
+    }
+
     return;
 }
 
@@ -1900,13 +2911,15 @@ u16eRspCode upMsgUpdSetupChk(UpUpdSetupCmd *upCmd, u16 pldLen)
         return RspParam;
     }
 
-#if 0
     if (gUpItfCb->updMgr.updWorking)
     {
         return RspBusy;
     }
-#endif
 
+    if (!trayBoxMntnAble(upCmd->trayIdx))
+    {
+        return RspChnBeRun;
+    }
     return RspOk;
 }
 
@@ -2017,7 +3030,7 @@ void upMsgUpdSetup(u8 *pld, u16 pldLen)
         boxCmd->isUpload = upCmd->isUpload;
         mem2Copy(boxCmd->fileSize, (u16 *)&upCmd->fileSize, sizeof(u32));
         boxAuxTxTry(box->canIdx, auxBuf);
-        box->boxWorkMode = BoxModeMntn;
+        box->boxWorkMode = BoxModeMntnBoxUpd;
         traySmplMgrRst(tray);
     }
     else  /*todo,增加温度盒等uart设备的维护模式*/
@@ -2059,6 +3072,7 @@ u16eRspCode upMsgUpdDldChk(UpUpdDldCmd *upCmd, u16 pldLen)
     {
         return RspParam;
     }
+
     return RspOk;
 }
 
@@ -2189,7 +3203,7 @@ void upMsgUpdCnfm(u8 *pld, u16 pldLen)
 
         if (NULL == (auxBuf = allocAuxCanBuf()))
         {
-            rspUpUpdCnfm(rspCode, 0);
+            rspUpUpdCnfm(RspNoRes, 0);
             return;
         }
 
@@ -2252,6 +3266,15 @@ void upMsgFixtNtfy(u8 *pld, u16 pldLen)
         return;
     }
 
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    if (!fixtCmd->enable)
+    {
+        /*离开工装维护,不需要通知级联,直接回复上位机*/
+        trayMntnEnd(tray, BoxModeMntnFixt);
+        rspUpCmmn(UpCmdIdFixtNtfy, fixtCmd->trayIdx, RspOk);
+        return;
+    }
+
     if (NULL == (blockBuf = allocUartBlockBuf()))
     {
         rspUpCmmn(UpCmdIdFixtNtfy, fixtCmd->trayIdx, RspBusy);
@@ -2259,23 +3282,30 @@ void upMsgFixtNtfy(u8 *pld, u16 pldLen)
     }
 
     uartMgr = gUartMgr;
-    tray = &gDevMgr->tray[fixtCmd->trayIdx];
     uartDevType = uartMgr->upFixt2UartType[fixtCmd->fixtType];
     tray->fixtUartCmmuAddr = uartMgr->uartAddrBase[uartDevType] + fixtCmd->actAddr;
     setUartBlockBuf(blockBuf, fixtCmd->trayIdx, UpCmdIdFixtNtfy,
                     tray->fixtUartCmmuAddr, uartDevType, UartMsgIdCmmn(UartMsgConn));
     ((UartMsgHead *)blockBuf->msgBuf)->pldLen = sizeof(UartCmmnCmd);
     uartTransTxTry(gDevMgr->fixtUartIdx, blockBuf);
-    tray->trayWorkMode = fixtCmd->enable ? BoxModeMntn : BoxModeManu;  /*todo, 起定时防呆,以及,去使能时不用通知工装*/
+    trayMntnEnter(tray, BoxModeMntnFixt);
     return;
 }
 
 u16eRspCode upFixtPrecChnlSwChk(UpFixtPrecSwCmd *fixtCmd, u16 pldLen)
 {
+    Tray *tray;
+
     if (pldLen!=sizeof(UpFixtPrecSwCmd) || fixtCmd->trayIdx>=gDevMgr->trayAmt
         || fixtCmd->caliType>=CaliTypeCri || fixtCmd->chnSwType>=FixtChnSwCri)
     {
         return RspParam;
+    }
+
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    if (!(tray->trayWorkMode & BoxModeMntnFixt))
+    {
+        return RspWoMntn;
     }
 
     return RspOk;
@@ -2315,18 +3345,27 @@ void upMsgFixtPrecChnlSw(u8 *pld, u16 pldLen)
     uartCmd->chnSwType = fixtCmd->chnSwType;
     uartCmd->firstChn = fixtCmd->firstChn;
     uartCmd->lastChn = fixtCmd->lastChn;
+    trayMntnKeep(tray);
     uartTransTxTry(gDevMgr->fixtUartIdx, blockBuf);
     return;
 }
 
 u16eRspCode upFixtPrecSmplChk(UpFixtPrecSmplCmd *fixtCmd, u16 pldLen)
 {
+    Tray *tray;
+
     if (pldLen!=sizeof(UpFixtPrecSmplCmd) || fixtCmd->trayIdx>=gDevMgr->trayAmt
         || fixtCmd->smplType>=FixtPrecSmplCri)
     {
         return RspParam;
     }
 
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    if (!(tray->trayWorkMode & BoxModeMntnFixt))
+    {
+        return RspWoMntn;
+    }
+        
     return RspOk;
 }
 
@@ -2361,15 +3400,24 @@ void upMsgFixtPrecSmpl(u8 *pld, u16 pldLen)
     uartHead->pldLen = sizeof(UartFixtPrecSmplCmd);
     uartCmd = (UartFixtPrecSmplCmd *)uartHead->payload;
     uartCmd->smplType = fixtCmd->smplType;
+    trayMntnKeep(tray);
     uartTransTxTry(gDevMgr->fixtUartIdx, blockBuf);
     return;
 }
 
 u16eRspCode upFixtPrecOutChk(UpFixtPrecOutCmd *fixtCmd, u16 pldLen)
 {
+    Tray *tray;
+
     if (pldLen!=sizeof(UpFixtPrecOutCmd) || fixtCmd->trayIdx>=gDevMgr->trayAmt)
     {
         return RspParam;
+    }
+
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    if (!(tray->trayWorkMode & BoxModeMntnFixt))
+    {
+        return RspWoMntn;
     }
 
     return RspOk;
@@ -2407,6 +3455,7 @@ void upMsgFixtPrecOut(u8 *pld, u16 pldLen)
     uartCmd = (UartFixtPrecOutCmd *)uartHead->payload;
     uartCmd->voltage = fixtCmd->voltage;
     uartCmd->current = fixtCmd->current;
+    trayMntnKeep(tray);
     uartTransTxTry(gDevMgr->fixtUartIdx, blockBuf);
     return;
 }
@@ -2425,9 +3474,17 @@ void _____begin_fixture_temperature_____(){}
 
 u16eRspCode upFixtTmprHeatChk(UpFixtTmprHeatCmd *fixtCmd, u16 pldLen)
 {
+    Tray *tray;
+
     if (pldLen!=sizeof(UpFixtTmprHeatCmd) || fixtCmd->trayIdx>=gDevMgr->trayAmt)
     {
         return RspParam;
+    }
+
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    if (!(tray->trayWorkMode & BoxModeMntnFixt))
+    {
+        return RspWoMntn;
     }
 
     return RspOk;
@@ -2465,18 +3522,27 @@ void upMsgFixtTmprHeat(u8 *pld, u16 pldLen)
     uartCmd->heatStop = fixtCmd->heatStop;
     uartCmd->tmprVal = fixtCmd->tmprVal;
     uartCmd->chnIdx = fixtCmd->chnIdx;
+    trayMntnKeep(tray);
     uartTransTxTry(gDevMgr->fixtUartIdx, blockBuf);
     return;
 }
 
 u16eRspCode upFixtTmprSmplChk(UpFixtTmprSmplCmd *fixtCmd, u16 pldLen)
 {
+    Tray *tray;
+
     if (pldLen!=sizeof(UpFixtTmprSmplCmd) || fixtCmd->trayIdx>=gDevMgr->trayAmt
         || fixtCmd->chnAmt > MaxFixtTmprSmplAmt)
     {
         return RspParam;
     }
 
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    if (!(tray->trayWorkMode & BoxModeMntnFixt))
+    {
+        return RspWoMntn;
+    }
+        
     return RspOk;
 }
 
@@ -2505,6 +3571,7 @@ void upMsgFixtTmprSmpl(u8 *pld, u16 pldLen)
     uartCmd = (UartFixtTmprSmplCmd *)uartHead->payload;
     uartCmd->chnAmt = fixtCmd->chnAmt;
     uartCmd->firstChnIdx = fixtCmd->firstChnIdx;
+    trayMntnKeep(tray);
     uartTransTxTry(gDevMgr->fixtUartIdx, blockBuf);
     return;
 }
@@ -2523,12 +3590,20 @@ void _____begin_fixture_neg_pressure_____(){}
 
 u16eRspCode upFixtCleanActChk(UpFixtCleanActCmd *fixtCmd, u16 pldLen)
 {
+    Tray *tray;
+
     if (pldLen!=sizeof(UpFixtCleanActCmd) || fixtCmd->trayIdx>=gDevMgr->trayAmt
         || fixtCmd->actType >= FixtCleanActCri)
     {
         return RspParam;
     }
 
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    if (!(tray->trayWorkMode & BoxModeMntnFixt))
+    {
+        return RspWoMntn;
+    }
+        
     return RspOk;
 }
 
@@ -2556,6 +3631,7 @@ void upMsgFixtCleanAct(u8 *pld, u16 pldLen)
     uartHead->pldLen = sizeof(UartFixtCleanActCmd);
     uartCmd = (UartFixtCleanActCmd *)uartHead->payload;
     uartCmd->actType = fixtCmd->actType;
+    trayMntnKeep(tray);
     uartTransTxTry(gDevMgr->fixtUartIdx, blockBuf);
     return;
 }
@@ -2572,9 +3648,17 @@ void upMsgFixtCleanDisp(u8 msgId, u8 *pld, u16 pldLen)
 
 u16eRspCode upFixtGasSmplChk(UpFixtGasSmplCmd *fixtCmd, u16 pldLen)
 {
+    Tray *tray;
+
     if (pldLen!=sizeof(UpFixtGasSmplCmd) || fixtCmd->trayIdx>=gDevMgr->trayAmt)
     {
         return RspParam;
+    }
+
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    if (!(tray->trayWorkMode & BoxModeMntnFixt))
+    {
+        return RspWoMntn;
     }
 
     return RspOk;
@@ -2605,6 +3689,7 @@ void upMsgFixtGasSmpl(u8 *pld, u16 pldLen)
     uartCmd = (UartFixtGasSmplCmd *)uartHead->payload;
     uartCmd->chnAmt = fixtCmd->chnAmt;
     uartCmd->firstChnIdx = fixtCmd->chnIdx;
+    trayMntnKeep(tray);
     uartTransTxTry(gDevMgr->fixtUartIdx, blockBuf);
     return;
 }
@@ -2621,9 +3706,17 @@ void upMsgFixtGasDisp(u8 msgId, u8 *pld, u16 pldLen)
 
 u16eRspCode upFixtFlowSmplChk(UpFixtFlowSmplCmd *fixtCmd, u16 pldLen)
 {
+    Tray *tray;
+
     if (pldLen!=sizeof(UpFixtFlowSmplCmd) || fixtCmd->trayIdx>=gDevMgr->trayAmt)
     {
         return RspParam;
+    }
+
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    if (!(tray->trayWorkMode & BoxModeMntnFixt))
+    {
+        return RspWoMntn;
     }
 
     return RspOk;
@@ -2654,6 +3747,7 @@ void upMsgFixtFlowSmpl(u8 *pld, u16 pldLen)
     uartCmd = (UartFixtFlowSmplCmd *)uartHead->payload;
     uartCmd->chnAmt = fixtCmd->chnAmt;
     uartCmd->firstChnIdx = fixtCmd->chnIdx;
+    trayMntnKeep(tray);
     uartTransTxTry(gDevMgr->fixtUartIdx, blockBuf);
     return;
 }
@@ -2672,9 +3766,17 @@ void _____begin_fixture_suction_____(){}
 
 u16eRspCode upFixtSuctInSmplChk(UpFixtSuckInSmplCmd *fixtCmd, u16 pldLen)
 {
+    Tray *tray;
+
     if (pldLen!=sizeof(UpFixtSuckInSmplCmd) || fixtCmd->trayIdx>=gDevMgr->trayAmt)
     {
         return RspParam;
+    }
+
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    if (!(tray->trayWorkMode & BoxModeMntnFixt))
+    {
+        return RspWoMntn;
     }
 
     return RspOk;
@@ -2704,6 +3806,83 @@ void upMsgFixtSuctInSmpl(u8 *pld, u16 pldLen)
     uartHead->pldLen = sizeof(UartFixtSuckInSmplCmd);
     uartCmd = (UartFixtSuckInSmplCmd *)uartHead->payload;
     uartCmd->delayTime = fixtCmd->delayTime;
+    trayMntnKeep(tray);
+    uartTransTxTry(gDevMgr->fixtUartIdx, blockBuf);
+    return;
+}
+
+void upMsgFixtSuctIn2Smpl(u8 *pld, u16 pldLen)
+{
+    UpFixtSuckInSmplCmd *fixtCmd;
+    UartFixtSuckInSmplCmd *uartCmd;
+    UartBlockCmdBuf *blockBuf;
+    UartMsgHead *uartHead;
+    Tray *tray;
+    u16eRspCode rspCode;
+
+    fixtCmd = (UpFixtSuckInSmplCmd *)pld;
+    if (RspOk != (rspCode=upFixtSuctInSmplChk(fixtCmd, pldLen))
+        || RspOk != (rspCode = NULL==(blockBuf=allocUartBlockBuf()) ? RspBusy : RspOk))
+    {
+        rspUpCmmn(UpCmdIdFixtSuctIn2Smpl, fixtCmd->trayIdx, rspCode);
+        return;
+    }
+
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    setUartBlockBuf(blockBuf, fixtCmd->trayIdx, UpCmdIdFixtSuctIn2Smpl, tray->fixtUartCmmuAddr, 
+                    UartFixtSuctIn2, UartMsgIdSpec(UartMsgFixtSuckIn2Smpl));
+    uartHead = (UartMsgHead *)blockBuf->msgBuf;
+    uartHead->pldLen = sizeof(UartFixtSuckInSmplCmd);
+    uartCmd = (UartFixtSuckInSmplCmd *)uartHead->payload;
+    uartCmd->delayTime = fixtCmd->delayTime;
+    trayMntnKeep(tray);
+    uartTransTxTry(gDevMgr->fixtUartIdx, blockBuf);
+    return;
+}
+
+u16eRspCode upFixtSuctIn2ActChk(UpFixtSuckIn2ActCmd *fixtCmd, u16 pldLen)
+{
+    Tray *tray;
+
+    if (pldLen!=sizeof(UpFixtSuckIn2ActCmd) || fixtCmd->trayIdx>=gDevMgr->trayAmt)
+    {
+        return RspParam;
+    }
+
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    if (!(tray->trayWorkMode & BoxModeMntnFixt))
+    {
+        return RspWoMntn;
+    }
+
+    return RspOk;
+}
+
+void upMsgFixtSuctIn2Act(u8 *pld, u16 pldLen)
+{
+    UpFixtSuckIn2ActCmd *fixtCmd;
+    UartFixtSuckIn2ActCmd *uartCmd;
+    UartBlockCmdBuf *blockBuf;
+    UartMsgHead *uartHead;
+    Tray *tray;
+    u16eRspCode rspCode;
+
+    fixtCmd = (UpFixtSuckIn2ActCmd *)pld;
+    if (RspOk != (rspCode=upFixtSuctIn2ActChk(fixtCmd, pldLen))
+        || RspOk != (rspCode = NULL==(blockBuf=allocUartBlockBuf()) ? RspBusy : RspOk))
+    {
+        rspUpCmmn(UpCmdIdFixtSuctIn2Act, fixtCmd->trayIdx, rspCode);
+        return;
+    }
+
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    setUartBlockBuf(blockBuf, fixtCmd->trayIdx, UpCmdIdFixtSuctIn2Act,
+                    tray->fixtUartCmmuAddr, UartFixtSuctIn2, UartMsgIdSpec(UartMsgFixtSuckIn2Act));
+    uartHead = (UartMsgHead *)blockBuf->msgBuf;
+    uartHead->pldLen = sizeof(UartFixtSuckIn2ActCmd);
+    uartCmd = (UartFixtSuckIn2ActCmd *)uartHead->payload;
+    uartCmd->topUpAct = fixtCmd->topUpAct;
+    trayMntnKeep(tray);
     uartTransTxTry(gDevMgr->fixtUartIdx, blockBuf);
     return;
 }
@@ -2720,12 +3899,20 @@ void upMsgFixtSuctInDisp(u8 msgId, u8 *pld, u16 pldLen)
 
 u16eRspCode upFixtSuctOutActChk(UpFixtSuckOutActCmd *fixtCmd, u16 pldLen)
 {
+    Tray *tray;
+
     if (pldLen!=sizeof(UpFixtSuckOutActCmd) || fixtCmd->trayIdx>=gDevMgr->trayAmt
         || fixtCmd->action > FixtSuckOutStaHold)
     {
         return RspParam;
     }
 
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    if (!(tray->trayWorkMode & BoxModeMntnFixt))
+    {
+        return RspWoMntn;
+    }
+        
     return RspOk;
 }
 
@@ -2754,15 +3941,24 @@ void upMsgFixtSuctOutAct(u8 *pld, u16 pldLen)
     uartCmd = (UartFixtSuckOutActCmd *)uartHead->payload;
     uartCmd->action = fixtCmd->action;
     uartCmd->delayTime = fixtCmd->delayTime;
+    trayMntnKeep(tray);
     uartTransTxTry(gDevMgr->fixtUartIdx, blockBuf);
     return;
 }
 
 u16eRspCode upFixtSuctOutSmplChk(UpFixtSuckOutSmplCmd *fixtCmd, u16 pldLen)
 {
+    Tray *tray;
+
     if (pldLen!=sizeof(UpFixtSuckOutSmplCmd) || fixtCmd->trayIdx>=gDevMgr->trayAmt)
     {
         return RspParam;
+    }
+
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    if (!(tray->trayWorkMode & BoxModeMntnFixt))
+    {
+        return RspWoMntn;
     }
 
     return RspOk;
@@ -2789,6 +3985,84 @@ void upMsgFixtSuctOutSmpl(u8 *pld, u16 pldLen)
                 tray->fixtUartCmmuAddr, UartFixtSuctOut, UartMsgIdSpec(UartMsgFixtSuckOutSmpl));
     uartHead = (UartMsgHead *)blockBuf->msgBuf;
     uartHead->pldLen = sizeof(UartFixtSuckOutSmplCmd);
+    trayMntnKeep(tray);
+    uartTransTxTry(gDevMgr->fixtUartIdx, blockBuf);
+    return;
+}
+
+void upMsgFixtSuctOut2Smpl(u8 *pld, u16 pldLen)
+{
+    UpFixtSuckOutSmplCmd *fixtCmd;
+    UartBlockCmdBuf *blockBuf;
+    UartMsgHead *uartHead;
+    Tray *tray;
+    u16eRspCode rspCode;
+
+    fixtCmd = (UpFixtSuckOutSmplCmd *)pld;
+    if (RspOk != (rspCode = upFixtSuctOutSmplChk(fixtCmd, pldLen))
+        || RspOk != (rspCode = NULL==(blockBuf=allocUartBlockBuf()) ? RspBusy : RspOk))
+    {
+        rspUpCmmn(UpCmdIdFixtSuctOut2Smpl, fixtCmd->trayIdx, rspCode);
+        return;
+    }
+
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    setUartBlockBuf(blockBuf, fixtCmd->trayIdx, UpCmdIdFixtSuctOut2Smpl,
+                tray->fixtUartCmmuAddr, UartFixtSuctOut2, UartMsgIdSpec(UartMsgFixtSuckOut2Smpl));
+    uartHead = (UartMsgHead *)blockBuf->msgBuf;
+    uartHead->pldLen = sizeof(UartFixtSuckOutSmplCmd);
+    trayMntnKeep(tray);
+    uartTransTxTry(gDevMgr->fixtUartIdx, blockBuf);
+    return;
+}
+
+u16eRspCode upFixtSuctOut2ActChk(UpFixtSuckOut2ActCmd *fixtCmd, u16 pldLen)
+{
+    Tray *tray;
+
+    if (pldLen!=sizeof(UpFixtSuckOut2ActCmd) || fixtCmd->trayIdx>=gDevMgr->trayAmt
+        || fixtCmd->action > FixtSuckOutStaHold)
+    {
+        return RspParam;
+    }
+
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    if (!(tray->trayWorkMode & BoxModeMntnFixt))
+    {
+        return RspWoMntn;
+    }
+        
+    return RspOk;
+}
+
+void upMsgFixtSuctOut2Act(u8 *pld, u16 pldLen)
+{
+    UpFixtSuckOut2ActCmd *fixtCmd;
+    UartFixtSuckOut2ActCmd *uartCmd;
+    UartBlockCmdBuf *blockBuf;
+    UartMsgHead *uartHead;
+    Tray *tray;
+    u16eRspCode rspCode;
+
+    fixtCmd = (UpFixtSuckOut2ActCmd *)pld;
+    if (RspOk != (rspCode=upFixtSuctOut2ActChk(fixtCmd, pldLen))
+        || RspOk != (rspCode = NULL==(blockBuf=allocUartBlockBuf()) ? RspBusy : RspOk))
+    {
+        rspUpCmmn(UpCmdIdFixtSuctOut2Act, fixtCmd->trayIdx, rspCode);
+        return;
+    }
+
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    setUartBlockBuf(blockBuf, fixtCmd->trayIdx, UpCmdIdFixtSuctOut2Act,
+                    tray->fixtUartCmmuAddr, UartFixtSuctOut2, UartMsgIdSpec(UartMsgFixtSuckOut2Act));
+    uartHead = (UartMsgHead *)blockBuf->msgBuf;
+    uartHead->pldLen = sizeof(UartFixtSuckOut2ActCmd);
+    uartCmd = (UartFixtSuckOut2ActCmd *)uartHead->payload;
+    uartCmd->action = fixtCmd->action;
+    uartCmd->delayTime = fixtCmd->delayTime;
+    uartCmd->topUpAct = fixtCmd->topUpAct;
+    uartCmd->rsvd = 0;
+    trayMntnKeep(tray);
     uartTransTxTry(gDevMgr->fixtUartIdx, blockBuf);
     return;
 }
@@ -2807,9 +4081,17 @@ void _____begin_fixture_location_____(){}
 
 u16eRspCode upFixtLocatSmplChk(UpFixtLocatSmplCmd *fixtCmd, u16 pldLen)
 {
+    Tray *tray;
+
     if (pldLen!=sizeof(UpFixtLocatSmplCmd) || fixtCmd->trayIdx>=gDevMgr->trayAmt)
     {
         return RspParam;
+    }
+
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    if (!(tray->trayWorkMode & BoxModeMntnFixt))
+    {
+        return RspWoMntn;
     }
 
     return RspOk;
@@ -2836,19 +4118,28 @@ void upMsgFixtLocatSmpl(u8 *pld, u16 pldLen)
                     tray->fixtUartCmmuAddr, UartFixtLocat, UartMsgIdSpec(UartMsgFixtLocatSmpl));
     uartHead = (UartMsgHead *)blockBuf->msgBuf;
     uartHead->pldLen = sizeof(UartFixtLocatSmplCmd);
+    trayMntnKeep(tray);
     uartTransTxTry(gDevMgr->fixtUartIdx, blockBuf);
     return;
 }
 
 u16eRspCode upFixtLocatActChk(UpFixtLocatActCmd *fixtCmd, u16 pldLen)
 {
+    Tray *tray;
+
     if (pldLen!=sizeof(UpFixtLocatActCmd) || fixtCmd->trayIdx>=gDevMgr->trayAmt
-        || fixtCmd->anodeTurn > FixtSuckOutStaHold || fixtCmd->npTurn > FixtSuckOutStaHold
-        || fixtCmd->cathodeTurn > FixtSuckOutStaHold)
+        || fixtCmd->anodeTurn > FixtLocatTurnCri-1 || fixtCmd->npTurn > FixtLocatTurnCri-1
+        || fixtCmd->cathodeTurn > FixtLocatTurnCri-1)
     {
         return RspParam;
     }
 
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    if (!(tray->trayWorkMode & BoxModeMntnFixt))
+    {
+        return RspWoMntn;
+    }
+        
     return RspOk;
 }
 
@@ -2875,7 +4166,92 @@ void upMsgFixtLocatAct(u8 *pld, u16 pldLen)
     uartHead = (UartMsgHead *)blockBuf->msgBuf;
     uartHead->pldLen = sizeof(UartFixtLocatActCmd);
     uartCmd = (UartFixtLocatActCmd *)uartHead->payload;
+    uartCmd->cellType = fixtCmd->cellType;
+    uartCmd->anodeTurn = fixtCmd->anodeTurn;
+    uartCmd->npTurn = fixtCmd->npTurn;
+    uartCmd->cathodeTurn = fixtCmd->cathodeTurn;
     uartCmd->delayTime = fixtCmd->delayTime;
+    trayMntnKeep(tray);
+    uartTransTxTry(gDevMgr->fixtUartIdx, blockBuf);
+    return;
+}
+
+void upMsgFixtLocat2Smpl(u8 *pld, u16 pldLen)
+{
+    UpFixtLocatSmplCmd *fixtCmd;
+    UartBlockCmdBuf *blockBuf;
+    UartMsgHead *uartHead;
+    Tray *tray;
+    u16eRspCode rspCode;
+
+    fixtCmd = (UpFixtLocatSmplCmd *)pld;
+    if (RspOk != (rspCode=upFixtLocatSmplChk(fixtCmd, pldLen))
+        || RspOk != (rspCode = NULL==(blockBuf=allocUartBlockBuf()) ? RspBusy : RspOk))
+    {
+        rspUpCmmn(UpCmdIdFixtLocat2Smpl, fixtCmd->trayIdx, rspCode);
+        return;
+    }
+
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    setUartBlockBuf(blockBuf, fixtCmd->trayIdx, UpCmdIdFixtLocat2Smpl,
+                    tray->fixtUartCmmuAddr, UartFixtLocat2, UartMsgIdSpec(UartMsgFixtLocat2Smpl));
+    uartHead = (UartMsgHead *)blockBuf->msgBuf;
+    uartHead->pldLen = sizeof(UartFixtLocatSmplCmd);
+    trayMntnKeep(tray);
+    uartTransTxTry(gDevMgr->fixtUartIdx, blockBuf);
+    return;
+}
+
+u16eRspCode upFixtLocat2ActChk(UpFixtLocat2ActCmd *fixtCmd, u16 pldLen)
+{
+    Tray *tray;
+
+    if (pldLen!=sizeof(UpFixtLocat2ActCmd) || fixtCmd->trayIdx>=gDevMgr->trayAmt
+        || fixtCmd->anodeTurn > FixtLocatTurnCri-1 || fixtCmd->npTurn > FixtLocatTurnCri-1
+        || fixtCmd->cathodeTurn > FixtLocatTurnCri-1)
+    {
+        return RspParam;
+    }
+
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    if (!(tray->trayWorkMode & BoxModeMntnFixt))
+    {
+        return RspWoMntn;
+    }
+        
+    return RspOk;
+}
+
+void upMsgFixtLocat2Act(u8 *pld, u16 pldLen)
+{
+    UpFixtLocat2ActCmd *fixtCmd;
+    UartFixtLocat2ActCmd *uartCmd;
+    UartBlockCmdBuf *blockBuf;
+    UartMsgHead *uartHead;
+    Tray *tray;
+    u16eRspCode rspCode;
+
+    fixtCmd = (UpFixtLocat2ActCmd *)pld;
+    if (RspOk != (rspCode=upFixtLocat2ActChk(fixtCmd, pldLen))
+        || RspOk != (rspCode = NULL==(blockBuf=allocUartBlockBuf()) ? RspBusy : RspOk))
+    {
+        rspUpCmmn(UpCmdIdFixtLocat2Act, fixtCmd->trayIdx, rspCode);
+        return;
+    }
+
+    tray = &gDevMgr->tray[fixtCmd->trayIdx];
+    setUartBlockBuf(blockBuf, fixtCmd->trayIdx, UpCmdIdFixtLocat2Act,
+                    tray->fixtUartCmmuAddr, UartFixtLocat2, UartMsgIdSpec(UartMsgFixtLocat2Act));
+    uartHead = (UartMsgHead *)blockBuf->msgBuf;
+    uartHead->pldLen = sizeof(UartFixtLocat2ActCmd);
+    uartCmd = (UartFixtLocat2ActCmd *)uartHead->payload;
+    uartCmd->cellType = fixtCmd->cellType;
+    uartCmd->anodeTurn = fixtCmd->anodeTurn;
+    uartCmd->npTurn = fixtCmd->npTurn;
+    uartCmd->cathodeTurn = fixtCmd->cathodeTurn;
+    uartCmd->topUpAct = fixtCmd->topUpAct;
+    uartCmd->delayTime = fixtCmd->delayTime;
+    trayMntnKeep(tray);
     uartTransTxTry(gDevMgr->fixtUartIdx, blockBuf);
     return;
 }
@@ -2921,7 +4297,10 @@ u16eRspCode upCaliNtfyChk(UpCaliNtfyCmd *caliCmd, u16 pldLen)
         return RspDiscBox;
     }
 
-    /*todo,检查是否允许进入*/
+    if (!trayBoxMntnAble(caliCmd->trayIdx))
+    {
+        return RspChnBeRun;
+    }
     return RspOk;
 }
 
@@ -2947,6 +4326,7 @@ void upMsgCaliNtfy(u8 *pld, u16 pldLen)
     CanAuxCmdBuf *auxBuf;
     BoxMsgHead *boxHead;
     BoxCaliNtfyCmd *boxCmd;
+    Tray *tray;
     Box *box;
     u16eRspCode rspCode;
 
@@ -2958,7 +4338,8 @@ void upMsgCaliNtfy(u8 *pld, u16 pldLen)
         return;
     }
 
-    box = &gDevMgr->tray[upCmd->trayIdx].box[upCmd->boxIdx];
+    tray = &gDevMgr->tray[upCmd->trayIdx];
+    box = &tray->box[upCmd->boxIdx];
     setCaliAuxCanBuf(auxBuf, box, UpCmdIdCaliNtfy);
     boxHead = (BoxMsgHead *)auxBuf->msgBuf;
     boxHead->msgId = BoxMsgCaliNtfy;
@@ -2968,18 +4349,30 @@ void upMsgCaliNtfy(u8 *pld, u16 pldLen)
     boxAuxTxTry(box->canIdx, auxBuf);
     if (upCmd->caliEnable)
     {
-        box->boxWorkMode = BoxModeMntn;
-        traySmplMgrRst(box->tray);
+        box->boxWorkMode = BoxModeMntnCali;
+        trayMntnEnter(tray, BoxModeMntnCali);
+    }
+    else
+    {
+        trayMntnKeep(tray);
     }
     return;
 }
 
-/*todo,检查时记得区分启动和停止*/
+/*todo,区分启动和停止,再检查详细些*/
 u16eRspCode upCaliStartChk(UpCaliStartCmd *caliCmd, u16 pldLen)
 {
+    Tray *tray;
+
     if (caliCmd->trayIdx >= gDevMgr->trayAmt)
     {
         return RspParam;
+    }
+
+    tray = &gDevMgr->tray[caliCmd->trayIdx];
+    if (!(tray->trayWorkMode & BoxModeMntnCali))
+    {
+        return RspWoMntn;
     }
 
     return RspOk;
@@ -3026,14 +4419,25 @@ void upMsgCaliStart(u8 *pld, u16 pldLen)
         boxMsgHead->msgLen = sizeof(BoxMsgHead);
     }
 
+    trayMntnKeep(tray);
     boxAuxTxTry(chn->box->canIdx, auxBuf);
     return;
 }
 
+/*todo,区分启动和停止,再检查详细些*/
 u16eRspCode upCaliSmplChk(UpCaliSmplCmd *caliCmd, u16 pldLen)
 {
+    Tray *tray;
+
     if (caliCmd->trayIdx >= gDevMgr->trayAmt)
     {
+        return RspParam;
+    }
+
+    tray = &gDevMgr->tray[caliCmd->trayIdx];
+    if (!(tray->trayWorkMode & BoxModeMntnCali))
+    {
+        return RspWoMntn;
     }
 
     return RspOk;
@@ -3079,14 +4483,25 @@ void upMsgCaliSmpl(u8 *pld, u16 pldLen)
     boxCmd->moduIdx = chn->box->chnModuAmt*chn->lowChnIdxInBox + upCmd->moduIdx;
     boxCmd->chnIdx = 0==genIdxInChn ? 0 : chn->cell[genIdxInChn-1].lowCellIdxInChn+1;
     boxCmd->smplAllSeries = 0==genIdxInChn && !upCmd->smplOnlyMainChn ? True : False;
+    trayMntnKeep(tray);
     boxAuxTxTry(chn->box->canIdx, auxBuf);
     return;
 }
 
+/*todo,再检查详细些*/
 u16eRspCode upCaliKbChk(UpCaliKbCmd *caliCmd, u16 pldLen)
 {
+    Tray *tray;
+
     if (caliCmd->trayIdx >= gDevMgr->trayAmt)
     {
+        return RspParam;
+    }
+
+    tray = &gDevMgr->tray[caliCmd->trayIdx];
+    if (!(tray->trayWorkMode & BoxModeMntnCali))
+    {
+        return RspWoMntn;
     }
 
     return RspOk;
@@ -3126,6 +4541,7 @@ void upMsgCaliKb(u8 *pld, u16 pldLen)
     boxCmd->caliKbAmt = upCmd->caliKbAmt;
     mem2Copy(boxCmd->caliKb, (u16 *)upCmd->caliKb, upCmd->caliKbAmt*sizeof(CaliKb));
     boxMsgHead->msgLen = sizeof(BoxMsgHead) + sizeof(BoxCaliKbCmd) + upCmd->caliKbAmt*sizeof(CaliKb);
+    trayMntnKeep(tray);
     boxAuxTxTry(chn->box->canIdx, auxBuf);
     return;
 }
@@ -3430,7 +4846,6 @@ void upInitBoot()
     timerStart(&mgr->bootTmr, TidBootIdleStay, 3000, WiReset);
 }
 
-//上位机消息处理初始化函数
 void upInitApp()
 {
     UpItfCb *mgr;
@@ -3466,39 +4881,43 @@ void upInitApp()
     {
         mgr->upMsgDisp[idx] = (UpMsgDisp)upMsgIgnore;
     }
-    mgr->upMsgDisp[UpMsgGrpManu] = upMsgDispManu; //电源柜
-    mgr->upMsgDisp[UpMsgGrpUpdate] = upMsgDispUpdate; //配置升级
-    mgr->upMsgDisp[UpMsgGrpCali] = upMsgDispCali; //修调
-    mgr->upMsgDisp[UpMsgGrpNdbd] = upMsgDispNdbd; //针床
-    mgr->upMsgDisp[UpMsgGrpFixt] = upMsgDispFixt; //工装
-    mgr->upMsgDisp[UpMsgGrpDbg] = upMsgDispDbg; //调试
+    mgr->upMsgDisp[UpMsgGrpManu] = upMsgDispManu;
+    mgr->upMsgDisp[UpMsgGrpUpdate] = upMsgDispUpdate;
+    mgr->upMsgDisp[UpMsgGrpCali] = upMsgDispCali;
+    mgr->upMsgDisp[UpMsgGrpNdbd] = upMsgDispNdbd;
+    mgr->upMsgDisp[UpMsgGrpFixt] = upMsgDispFixt;
+    mgr->upMsgDisp[UpMsgGrpDbg] = upMsgDispDbg;
 
     /*生产类*/
     for (idx=0; idx<UpMsgIdManuCri; idx++)
     {
         mgr->upMsgProcManu[idx] = (UpMsgProc)upMsgIgnore;
     }
-    mgr->upMsgProcManu[UpMsgIdManuConn] = upMsgConnAck; //
-    mgr->upMsgProcManu[UpMsgIdManuSmplChnl] = upMsgSmplChnl; //按通道采样-通道
-    mgr->upMsgProcManu[UpMsgIdManuSmplNdbd] = upMsgSmplNdbd; //针床-按通道采样
-    mgr->upMsgProcManu[UpMsgIdManuSmplStack] = upMsgSmplStack; //运行堆栈
-    mgr->upMsgProcManu[UpMsgIdManuSmplTray] = upMsgSmplTray; //按托盘采样
-    mgr->upMsgProcManu[UpMsgIdManuFlow] = upMsgFlowStep; //流程
-    mgr->upMsgProcManu[UpMsgIdManuProtGen] = upMsgProtGen; //全程保护
-    mgr->upMsgProcManu[UpMsgIdManuProtStep] = upMsgProtStep; //工步保护
-    mgr->upMsgProcManu[UpMsgIdManuStart] = upMsgFlowStart; //启动
+    mgr->upMsgProcManu[UpMsgIdManuConn] = upMsgConnAck;
+    mgr->upMsgProcManu[UpMsgIdManuSmplChnl] = upMsgSmplChnl;
+    mgr->upMsgProcManu[UpMsgIdManuSmplNdbd] = upMsgSmplNdbd;
+    mgr->upMsgProcManu[UpMsgIdManuSmplStack] = upMsgSmplStack;
+    mgr->upMsgProcManu[UpMsgIdManuSmplTray] = upMsgSmplTray;
+    mgr->upMsgProcManu[UpMsgIdManuFlow] = upMsgFlowStep;
+    mgr->upMsgProcManu[UpMsgIdManuProtGen] = upMsgTrayProt;
+    mgr->upMsgProcManu[UpMsgIdManuProtStep] = upMsgStepProt;
+    mgr->upMsgProcManu[UpMsgIdManuStart] = upMsgFlowStart;
     mgr->upMsgProcManu[UpMsgIdManuPause] = upMsgFlowPause;
     mgr->upMsgProcManu[UpMsgIdManuStop] = upMsgFlowStop;
     mgr->upMsgProcManu[UpMsgIdManuJump] = upMsgFlowJump;
     mgr->upMsgProcManu[UpMsgIdManuCtnu] = upMsgFlowCtnu;
     mgr->upMsgProcManu[UpMsgIdManuCtnuStack] = upMsgFlowStack;
     mgr->upMsgProcManu[UpMsgIdManuWarnDel] = upMsgWarnDel;
+    mgr->upMsgProcManu[UpMsgIdManuCellSw] = upMsgSeriesCellSw;
+    mgr->upMsgProcManu[UpMsgIdManuRgbCtrl] = upMsgRgbCtrl;
 
     /*配置升级类*/
     for (idx=0; idx<UpMsgIdUpdCri; idx++)
     {
         mgr->upMsgProcUpdate[idx] = (UpMsgProc)upMsgIgnore;
     }
+    mgr->upMsgProcUpdate[UpMsgIdUpdCfgRead] = upMsgCfgRead;
+    mgr->upMsgProcUpdate[UpMsgIdUpdCfgSet] = upMsgCfgSet;
     mgr->upMsgProcUpdate[UpMsgIdUpdSetup] = upMsgUpdSetup;
     mgr->upMsgProcUpdate[UpMsgIdUpdDld] = upMsgUpdDld;
     mgr->upMsgProcUpdate[UpMsgIdUpdUpld] = upMsgUpdUpld;
@@ -3582,14 +5001,18 @@ void upInitApp()
         mgr->upMsgFixtSuctInDisp[idx] = (UpMsgProc)upMsgIgnore;
     }
     mgr->upMsgFixtSuctInDisp[UpMsgIdFixtSuctInSmpl] = upMsgFixtSuctInSmpl;
+    mgr->upMsgFixtSuctInDisp[UpMsgIdFixtSuctIn2Smpl] = upMsgFixtSuctIn2Smpl;
+    mgr->upMsgFixtSuctInDisp[UpMsgIdFixtSuctIn2Act] = upMsgFixtSuctIn2Act;
 
     /*插拔吸嘴工装*/
     for (idx=0; idx<UpMsgIdFixtSuctOutCri; idx++)
     {
         mgr->upMsgFixtSuctOutDisp[idx] = (UpMsgProc)upMsgIgnore;
     }
-    mgr->upMsgFixtSuctOutDisp[UpMsgIdFixtSuctOutAct] = upMsgFixtSuctOutAct;
     mgr->upMsgFixtSuctOutDisp[UpMsgIdFixtSuctOutSmpl] = upMsgFixtSuctOutSmpl;
+    mgr->upMsgFixtSuctOutDisp[UpMsgIdFixtSuctOutAct] = upMsgFixtSuctOutAct;
+    mgr->upMsgFixtSuctOutDisp[UpMsgIdFixtSuctOut2Smpl] = upMsgFixtSuctOut2Smpl;
+    mgr->upMsgFixtSuctOutDisp[UpMsgIdFixtSuctOut2Act] = upMsgFixtSuctOut2Act;
 
     /*定位工装*/
     for (idx=0; idx<UpMsgIdFixtLocatCri; idx++)
@@ -3598,6 +5021,8 @@ void upInitApp()
     }
     mgr->upMsgFixtLocatDisp[UpMsgIdFixtLocatSmpl] = upMsgFixtLocatSmpl;
     mgr->upMsgFixtLocatDisp[UpMsgIdFixtLocatAct] = upMsgFixtLocatAct;
+    mgr->upMsgFixtLocatDisp[UpMsgIdFixtLocat2Smpl] = upMsgFixtLocat2Smpl;
+    mgr->upMsgFixtLocatDisp[UpMsgIdFixtLocat2Act] = upMsgFixtLocat2Act;
 
     /*工步内容合法性检查*/
     for (stepType=StepTypeNull; stepType<StepTypeCri; stepType++)

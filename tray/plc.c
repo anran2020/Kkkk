@@ -50,11 +50,11 @@ void plc_setting_load(void )
     addr=mySetting->plc1MapTrayStartAddr;
     for (i = 0; i < gPlcMapTrayNum; i++)
     {
-       gPlcTrayIdx[i]=addr++;
+        gPlcTrayIdx[i]=addr++;
     }
     for (i = 0; i < gDevMgr->trayAmt; i++)
     {
-       gPlcTrayAddrBase[i]=mySetting->plc1ReadBaseAddr[i];
+        gPlcTrayAddrBase[i]=mySetting->plc1ReadBaseAddr[i];
     }
     gPlcReadAmtMax=mySetting->plc1ReadMaxAddr[0];
 
@@ -212,7 +212,7 @@ void plcRegWriteTry(u8 trayIdx, u8eNdbdCtrlType type, s16 val)
     u8 trayIdxInPlc;
 
     if (NULL==(plc=devTrayIdx2Plc(trayIdx, gPlcMgr, &trayIdxInPlc))
-        || !plc->online || NULL==(blkBuf=plcBlkBufAlloc(plc)))
+            || !plc->online || NULL==(blkBuf=plcBlkBufAlloc(plc)))
     {
         return;
     }
@@ -315,16 +315,18 @@ void plcExprAckNtfy(Plc *plc)
     gDevMgr->tray[plc->plc2TrayIdx[plc->smplTrayIdx]].ndbdData.ndbdDataValid = False;
     if (plc->online)
     {
-        plc->delaySmpCnt++;
-        if (plc->delaySmpCnt > plc->trayAmt*3)
+        plc->smplExprCnt++;
+        if (plc->smplExprCnt > plc->trayAmt*3)
         {
             plc->online = False;
-            plc->delaySmpCnt = 0;
+            plc->smplExprCnt = 0;
+            plc->delaySmplCnt = 0;
+            gDevMgr->tray[plc->plc2TrayIdx[plc->smplTrayIdx]].ndbdData.status[NdbdStaTouch] = 0;
             sendUpConnNtfy();
-    #ifdef DebugVersion
-    #else
+#ifdef DebugVersion
+#else
             pb_plc_usocket_reconn(plc->plcIdx);
-    #endif
+#endif
         }
     }
 
@@ -373,14 +375,15 @@ void plcRxSmplAck(Plc *plc, u8 *buf)
 
     tray = &gDevMgr->tray[plc->plc2TrayIdx[plc->smplTrayIdx]];
     ndbdData = &tray->ndbdData;
+    plc->smplExprCnt = 0;
     if (!plc->online)
     {
-        if (plc->delaySmpCnt < plc->trayAmt*3) /*延时3秒后采样有效*/
+        if (plc->delaySmplCnt < plc->trayAmt*5) /*连接后延时5秒后采样有效*/
         {
-            plc->delaySmpCnt++;
+            plc->delaySmplCnt++;
             return;
         }
-        plc->delaySmpCnt = 0;
+        plc->delaySmplCnt = 0;
         plc->online = True;
         sendUpConnNtfy();
     }
@@ -403,16 +406,16 @@ void plcRxSmplAck(Plc *plc, u8 *buf)
     if (!trayBeTouchPre && 1==ndbdData->status[NdbdStaTouch])  /*脱开变压合*/
     {
         timerStart(&tray->protEnaTmr, TidTrayProtEna, 2000, WiReset);
-        trayNpReset(tray->trayIdx);  /*todo,临时防呆,以后要去掉*/
+        trayNpReset(tray->trayIdx);  /*todo,以后可能要去掉*/
     }
     else if (trayBeTouchPre && 1!=ndbdData->status[NdbdStaTouch])  /*压合变脱开*/
     {
-        tray->protEnable = False;
+        tray->protDisable |= ProtDisableTouch;
         TimerStop(&tray->protEnaTmr);
         if (0 != tray->npMgr.closeBrkDelaySecT08)
         {
             timerStart(&tray->npSwRstDelayTmr, TidNpSwRstDelay,
-                tray->npMgr.closeBrkDelaySecT08*1000, WiReset);
+                       tray->npMgr.closeBrkDelaySecT08*1000, WiReset);
         }
         trayStopByProt(tray, Cc0NdbdBrkAbnml);
     }
@@ -470,7 +473,7 @@ u16 plcRxMsg(u8 plcIdx, u8 *buf, u16 size)
         pldLen = WordToNet(ackHead->length);
         transId = WordToNet(ackHead->transId);
         if (plc->transId != transId)
-        //if (plc->transId != WordToNet(ackHead->transId)) /很神奇,留着*/
+            //if (plc->transId != WordToNet(ackHead->transId)) /很神奇,留着*/
         {
             return 0;  /*丢弃，清空*/
         }
@@ -541,6 +544,7 @@ recvContinue:
 
 void plcInitAddr(PlcMgr *mgr)
 {
+#if 1  /*正常西门子plc*/
     mgr->plcSta[NdbdSenNpVal].enable = True;
     mgr->plcSta[NdbdSenNpVal].amount = 1;
     mgr->plcSta[NdbdSenNpVal].plcAddr = 0;
@@ -553,6 +557,14 @@ void plcInitAddr(PlcMgr *mgr)
     mgr->plcSta[NdbdStaTouch].amount = 1;
     mgr->plcSta[NdbdStaTouch].plcAddr = 4;
     strcpy(mgr->plcSta[NdbdStaTouch].name, "trayTouch");
+    mgr->plcSta[NdbdSenBollOpen].enable = True;
+    mgr->plcSta[NdbdSenBollOpen].amount = 1;
+    mgr->plcSta[NdbdSenBollOpen].plcAddr = 5;
+    strcpy(mgr->plcSta[NdbdSenBollOpen].name, "bollOpen");
+    mgr->plcSta[NdbdSenBollClose].enable = True;
+    mgr->plcSta[NdbdSenBollClose].amount = 1;
+    mgr->plcSta[NdbdSenBollClose].plcAddr = 6;
+    strcpy(mgr->plcSta[NdbdSenBollClose].name, "bollClose");
     mgr->plcSta[NdbdSenFwdEnter].enable = True;
     mgr->plcSta[NdbdSenFwdEnter].amount = 1;
     mgr->plcSta[NdbdSenFwdEnter].plcAddr = 8;
@@ -585,6 +597,10 @@ void plcInitAddr(PlcMgr *mgr)
     mgr->plcSta[NdbdSenBrkVacum].amount = 1;
     mgr->plcSta[NdbdSenBrkVacum].plcAddr = 19;
     strcpy(mgr->plcSta[NdbdSenBrkVacum].name, "brkVacum");
+    mgr->plcSta[NdbdSenPlcVer].enable = True;
+    mgr->plcSta[NdbdSenPlcVer].amount = 1;
+    mgr->plcSta[NdbdSenPlcVer].plcAddr = 20;
+    strcpy(mgr->plcSta[NdbdSenPlcVer].name, "plcVer");
     mgr->plcSta[NdbdSenFireDoorUp].enable = True;
     mgr->plcSta[NdbdSenFireDoorUp].amount = 1;
     mgr->plcSta[NdbdSenFireDoorUp].plcAddr = 21;
@@ -609,10 +625,6 @@ void plcInitAddr(PlcMgr *mgr)
     mgr->plcSta[NdbdSenCylinderUp].amount = 1;
     mgr->plcSta[NdbdSenCylinderUp].plcAddr = 26;
     strcpy(mgr->plcSta[NdbdSenCylinderUp].name, "cyldUp");
-    mgr->plcSta[NdbdSenPlcVer].enable = True;
-    mgr->plcSta[NdbdSenPlcVer].amount = 1;
-    mgr->plcSta[NdbdSenPlcVer].plcAddr = 20;
-    strcpy(mgr->plcSta[NdbdSenPlcVer].name, "plcVer");
 
     mgr->plcWarn[NdbdWarnScram].enable = True;
     mgr->plcWarn[NdbdWarnScram].amount = 1;
@@ -683,6 +695,10 @@ void plcInitAddr(PlcMgr *mgr)
     mgr->plcCtrl[NdbdSetFireDoor].amount = 1;
     mgr->plcCtrl[NdbdSetFireDoor].plcAddr = 75;
     strcpy(mgr->plcCtrl[NdbdSetFireDoor].name, "fireDoor");
+    mgr->plcCtrl[NdbdSetSlotFan].enable = True;
+    mgr->plcCtrl[NdbdSetSlotFan].amount = 1;
+    mgr->plcCtrl[NdbdSetSlotFan].plcAddr = 76;
+    strcpy(mgr->plcCtrl[NdbdSetSlotFan].name, "fan");
     mgr->plcCtrl[NdbdSetRatioVal].enable = True;
     mgr->plcCtrl[NdbdSetRatioVal].amount = 1;
     mgr->plcCtrl[NdbdSetRatioVal].plcAddr = 77;
@@ -699,11 +715,170 @@ void plcInitAddr(PlcMgr *mgr)
     mgr->plcCtrl[NdbdSetFixtPower].amount = 1;
     mgr->plcCtrl[NdbdSetFixtPower].plcAddr = 82;
     strcpy(mgr->plcCtrl[NdbdSetFixtPower].name, "fixtPower");
+#else /*汇川plc,仅psl项目样机因缺货临时用,基址1100*/
+    mgr->plcSta[NdbdSenNpVal].enable = True;
+    mgr->plcSta[NdbdSenNpVal].amount = 1;
+    mgr->plcSta[NdbdSenNpVal].plcAddr = 18;
+    strcpy(mgr->plcSta[NdbdSenNpVal].name, "npVal");
+    mgr->plcSta[NdbdStaEnter].enable = True;
+    mgr->plcSta[NdbdStaEnter].amount = 1;
+    mgr->plcSta[NdbdStaEnter].plcAddr = 21;
+    strcpy(mgr->plcSta[NdbdStaEnter].name, "trayEnter");
+    mgr->plcSta[NdbdStaTouch].enable = True;
+    mgr->plcSta[NdbdStaTouch].amount = 1;
+    mgr->plcSta[NdbdStaTouch].plcAddr = 22;
+    strcpy(mgr->plcSta[NdbdStaTouch].name, "trayTouch");
+    mgr->plcSta[NdbdSenFwdEnter].enable = True;
+    mgr->plcSta[NdbdSenFwdEnter].amount = 1;
+    mgr->plcSta[NdbdSenFwdEnter].plcAddr = 26;
+    strcpy(mgr->plcSta[NdbdSenFwdEnter].name, "fwdEnter");
+    mgr->plcSta[NdbdSenBackEnter].enable = True;
+    mgr->plcSta[NdbdSenBackEnter].amount = 1;
+    mgr->plcSta[NdbdSenBackEnter].plcAddr = 27;
+    strcpy(mgr->plcSta[NdbdSenBackEnter].name, "backEnter");
+    mgr->plcSta[NdbdSenFowTouch].enable = True;
+    mgr->plcSta[NdbdSenFowTouch].amount = 1;
+    mgr->plcSta[NdbdSenFowTouch].plcAddr = 28;
+    strcpy(mgr->plcSta[NdbdSenFowTouch].name, "fwdTouch");
+    mgr->plcSta[NdbdSenBackTouch].enable = True;
+    mgr->plcSta[NdbdSenBackTouch].amount = 1;
+    mgr->plcSta[NdbdSenBackTouch].plcAddr = 29;
+    strcpy(mgr->plcSta[NdbdSenBackTouch].name, "backTouch");
+    mgr->plcSta[NdbdStaWorkMode].enable = True;
+    mgr->plcSta[NdbdStaWorkMode].amount = 1;
+    mgr->plcSta[NdbdStaWorkMode].plcAddr = 34;
+    strcpy(mgr->plcSta[NdbdStaWorkMode].name, "workMode");
+    mgr->plcSta[NdbdSenRatioVal].enable = True;
+    mgr->plcSta[NdbdSenRatioVal].amount = 1;
+    mgr->plcSta[NdbdSenRatioVal].plcAddr = 35;
+    strcpy(mgr->plcSta[NdbdSenRatioVal].name, "ratioVal");
+    mgr->plcSta[NdbdSenSwValve].enable = True;
+    mgr->plcSta[NdbdSenSwValve].amount = 1;
+    mgr->plcSta[NdbdSenSwValve].plcAddr = 36;
+    strcpy(mgr->plcSta[NdbdSenSwValve].name, "swValve");
+    mgr->plcSta[NdbdSenBrkVacum].enable = True;
+    mgr->plcSta[NdbdSenBrkVacum].amount = 1;
+    mgr->plcSta[NdbdSenBrkVacum].plcAddr = 37;
+    strcpy(mgr->plcSta[NdbdSenBrkVacum].name, "brkVacum");
+    mgr->plcSta[NdbdSenPlcVer].enable = True;
+    mgr->plcSta[NdbdSenPlcVer].amount = 1;
+    mgr->plcSta[NdbdSenPlcVer].plcAddr = 38;
+    strcpy(mgr->plcSta[NdbdSenPlcVer].name, "plcVer");
+    mgr->plcSta[NdbdSenFireDoorUp].enable = True;
+    mgr->plcSta[NdbdSenFireDoorUp].amount = 1;
+    mgr->plcSta[NdbdSenFireDoorUp].plcAddr = 39;
+    strcpy(mgr->plcSta[NdbdSenFireDoorUp].name, "fireDoorUp");
+    mgr->plcSta[NdbdSenFireDoorDown].enable = True;
+    mgr->plcSta[NdbdSenFireDoorDown].amount = 1;
+    mgr->plcSta[NdbdSenFireDoorDown].plcAddr = 40;
+    strcpy(mgr->plcSta[NdbdSenFireDoorDown].name, "fireDoorDown");
+    mgr->plcSta[NdbdSenFwdDoorMsw].enable = True;
+    mgr->plcSta[NdbdSenFwdDoorMsw].amount = 1;
+    mgr->plcSta[NdbdSenFwdDoorMsw].plcAddr = 41;
+    strcpy(mgr->plcSta[NdbdSenFwdDoorMsw].name, "fwdDoor");
+    mgr->plcSta[NdbdSenBackDoor].enable = True;
+    mgr->plcSta[NdbdSenBackDoor].amount = 1;
+    mgr->plcSta[NdbdSenBackDoor].plcAddr = 42;
+    strcpy(mgr->plcSta[NdbdSenBackDoor].name, "backDoor");
+    mgr->plcSta[NdbdSenCylinderDown].enable = True;
+    mgr->plcSta[NdbdSenCylinderDown].amount = 1;
+    mgr->plcSta[NdbdSenCylinderDown].plcAddr = 43;
+    strcpy(mgr->plcSta[NdbdSenCylinderDown].name, "cyldDown");
+    mgr->plcSta[NdbdSenCylinderUp].enable = True;
+    mgr->plcSta[NdbdSenCylinderUp].amount = 1;
+    mgr->plcSta[NdbdSenCylinderUp].plcAddr = 44;
+    strcpy(mgr->plcSta[NdbdSenCylinderUp].name, "cyldUp");
+
+    mgr->plcWarn[NdbdWarnScram].enable = True;
+    mgr->plcWarn[NdbdWarnScram].amount = 1;
+    mgr->plcWarn[NdbdWarnScram].plcAddr = 100;
+    strcpy(mgr->plcWarn[NdbdWarnScram].name, "scram");
+    mgr->plcWarn[NdbdWarnGas].enable = True;
+    mgr->plcWarn[NdbdWarnGas].amount = 1;
+    mgr->plcWarn[NdbdWarnGas].plcAddr = 101;
+    strcpy(mgr->plcWarn[NdbdWarnGas].name, "gasPres");
+    mgr->plcWarn[NdbdWarnSmoke].enable = True;
+    mgr->plcWarn[NdbdWarnSmoke].amount = 1;
+    mgr->plcWarn[NdbdWarnSmoke].plcAddr = 102;
+    strcpy(mgr->plcWarn[NdbdWarnSmoke].name, "smoke");
+    mgr->plcWarn[NdbdWarnCo].enable = True;
+    mgr->plcWarn[NdbdWarnCo].amount = 1;
+    mgr->plcWarn[NdbdWarnCo].plcAddr = 103;
+    strcpy(mgr->plcWarn[NdbdWarnCo].name, "co");
+    mgr->plcWarn[NdbdWarnCylinder].enable = True;
+    mgr->plcWarn[NdbdWarnCylinder].amount = 1;
+    mgr->plcWarn[NdbdWarnCylinder].plcAddr = 104;
+    strcpy(mgr->plcWarn[NdbdWarnCylinder].name, "cylinder");
+    mgr->plcWarn[NdbdWarnFan].enable = True;
+    mgr->plcWarn[NdbdWarnFan].amount = 1;
+    mgr->plcWarn[NdbdWarnFan].plcAddr = 105;
+    strcpy(mgr->plcWarn[NdbdWarnFan].name, "fan");
+    mgr->plcWarn[NdbdWarnFireDoor].enable = True;
+    mgr->plcWarn[NdbdWarnFireDoor].amount = 1;
+    mgr->plcWarn[NdbdWarnFireDoor].plcAddr = 107;
+    strcpy(mgr->plcWarn[NdbdWarnFireDoor].name, "fireDoor");
+    mgr->plcWarn[NdbdWarnSlotDoorRast].enable = True;
+    mgr->plcWarn[NdbdWarnSlotDoorRast].amount = 1;
+    mgr->plcWarn[NdbdWarnSlotDoorRast].plcAddr = 108;
+    strcpy(mgr->plcWarn[NdbdWarnSlotDoorRast].name, "slotDoorRast");
+    mgr->plcWarn[NdbdWarnTray].enable = True;
+    mgr->plcWarn[NdbdWarnTray].amount = 1;
+    mgr->plcWarn[NdbdWarnTray].plcAddr = 109;
+    strcpy(mgr->plcWarn[NdbdWarnTray].name, "tray");
+    mgr->plcWarn[NdbdWarnFwdDoorMsw].enable = True;
+    mgr->plcWarn[NdbdWarnFwdDoorMsw].amount = 1;
+    mgr->plcWarn[NdbdWarnFwdDoorMsw].plcAddr = 110;
+    strcpy(mgr->plcWarn[NdbdWarnFwdDoorMsw].name, "fwdDoor");
+    mgr->plcWarn[NdbdWarnBackDoor].enable = True;
+    mgr->plcWarn[NdbdWarnBackDoor].amount = 1;
+    mgr->plcWarn[NdbdWarnBackDoor].plcAddr = 111;
+    strcpy(mgr->plcWarn[NdbdWarnBackDoor].name, "backDoor");
+    mgr->plcWarn[NdbdWarnRatio].enable = True;
+    mgr->plcWarn[NdbdWarnRatio].amount = 1;
+    mgr->plcWarn[NdbdWarnRatio].plcAddr = 112;
+    strcpy(mgr->plcWarn[NdbdWarnRatio].name, "ratio");
+    mgr->plcWarn[NdbdWarnScapeGoat].enable = True;
+    mgr->plcWarn[NdbdWarnScapeGoat].amount = 1;
+    mgr->plcWarn[NdbdWarnScapeGoat].plcAddr = 113;
+    strcpy(mgr->plcWarn[NdbdWarnScapeGoat].name, "scapeGoat");
+
+    mgr->plcCtrl[NdbdSetTouch].enable = True;
+    mgr->plcCtrl[NdbdSetTouch].amount = 1;
+    mgr->plcCtrl[NdbdSetTouch].plcAddr = 151;
+    strcpy(mgr->plcCtrl[NdbdSetTouch].name, "touchCtrl");
+    mgr->plcCtrl[NdbdSetFireNtfy].enable = True;
+    mgr->plcCtrl[NdbdSetFireNtfy].amount = 1;
+    mgr->plcCtrl[NdbdSetFireNtfy].plcAddr = 153;
+    strcpy(mgr->plcCtrl[NdbdSetFireNtfy].name, "fireNtfy");
+    mgr->plcCtrl[NdbdSetWarnDel].enable = True;
+    mgr->plcCtrl[NdbdSetWarnDel].amount = 1;
+    mgr->plcCtrl[NdbdSetWarnDel].plcAddr = 154;
+    strcpy(mgr->plcCtrl[NdbdSetWarnDel].name, "warnDel");
+    mgr->plcCtrl[NdbdSetFireDoor].enable = True;
+    mgr->plcCtrl[NdbdSetFireDoor].amount = 1;
+    mgr->plcCtrl[NdbdSetFireDoor].plcAddr = 158;
+    strcpy(mgr->plcCtrl[NdbdSetFireDoor].name, "fireDoor");
     mgr->plcCtrl[NdbdSetSlotFan].enable = True;
     mgr->plcCtrl[NdbdSetSlotFan].amount = 1;
-    mgr->plcCtrl[NdbdSetSlotFan].plcAddr = 76;
+    mgr->plcCtrl[NdbdSetSlotFan].plcAddr = 159;
     strcpy(mgr->plcCtrl[NdbdSetSlotFan].name, "fan");
-
+    mgr->plcCtrl[NdbdSetRatioVal].enable = True;
+    mgr->plcCtrl[NdbdSetRatioVal].amount = 1;
+    mgr->plcCtrl[NdbdSetRatioVal].plcAddr = 160;
+    strcpy(mgr->plcCtrl[NdbdSetRatioVal].name, "ratio");
+    mgr->plcCtrl[NdbdSetSwValve].enable = True;
+    mgr->plcCtrl[NdbdSetSwValve].amount = 1;
+    mgr->plcCtrl[NdbdSetSwValve].plcAddr = 162;
+    strcpy(mgr->plcCtrl[NdbdSetSwValve].name, "valve");
+    mgr->plcCtrl[NdbdSetBrkVacum].enable = True;
+    mgr->plcCtrl[NdbdSetBrkVacum].amount = 1;
+    mgr->plcCtrl[NdbdSetBrkVacum].plcAddr = 163;
+    strcpy(mgr->plcCtrl[NdbdSetBrkVacum].name, "brkVacum");
+    mgr->plcCtrl[NdbdSetFixtPower].enable = True;
+    mgr->plcCtrl[NdbdSetFixtPower].amount = 1;
+    mgr->plcCtrl[NdbdSetFixtPower].plcAddr = 165;
+    strcpy(mgr->plcCtrl[NdbdSetFixtPower].name, "fixtPower");
+#endif
     mgr->regReadMin = 0;
     mgr->regReadMaxCri = mgr->plcWarn[NdbdWarnScapeGoat].plcAddr + 1;
 
@@ -717,7 +892,7 @@ b8 plcBeOnline(u8 plcIdx)
         return gPlcMgr->plc[plcIdx].online;
     }
 
-    return True;
+    return True; /*家里可能需要不带plc跑,返回在线*/
 }
 
 void plcInit()
@@ -752,7 +927,8 @@ void plcInit()
         plc = &mgr->plc[plcIdx];
         plc->plcIdx = plcIdx;
         plc->online = False;
-        plc->delaySmpCnt = 0;
+        plc->delaySmplCnt = 0;
+        plc->smplExprCnt = 0;
         plc->version = 1;
         plc->transId = 0;
         plc->smplRegIdx = 0;

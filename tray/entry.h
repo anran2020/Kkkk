@@ -39,7 +39,7 @@ struct cellTag;
 typedef struct
 {
     b8 tmprBeValid;
-    u8 tmprInvalidCnt; /*todo,超阈值后保护,自维护,消警也清*/
+    u8 tmprInvalidCnt;
     u16 tmprVal;
 }TmprData;
 
@@ -51,7 +51,6 @@ typedef struct
 {
     u32 mixSubHpnBitmap;  /*bitmap,保护因子发生,下标MixSubCri,自维护,消警也清*/
     u32 mixSubHpnSec[MixSubCri];  /*保护因子时戳*/
-    u16 preCauseCode;  /*用于再次保护时比较,消警清零*/
     u16 newCauseCode;  /*记录后清零*/
     b8 prePowerBeValid;
     b8 newPowerBeValid;  /*确定采到样后置位,记录历史后清零*/
@@ -64,7 +63,7 @@ typedef struct
     s32 newVolCur;
     s32 newVolPort;
 
-    u32 idleTimeStampSec;  /*进入闲时的时间戳秒,自维护*/
+    u32 idleTimeStampSec;  /*进入闲时的时间戳秒,自维护,消警更*/
     s32 idleVolBase;   /*闲时累加电压基点,自维护*/
     s32 quietVolDownBase;   /*静置电压下降电压基点,自维护*/
     s32 cccVolDownAbnmVolBase;
@@ -79,7 +78,7 @@ typedef struct
     s32 flowIdleVolIntvlRiseVolBase;
     u32 flowCcdcVolIntvlFluctTimeBaseMs;
     s32 flowCcdcVolIntvlFluctVolBase;
-    b8 idleVolBaseValid;   /*闲时累加电压基点是否有效,空闲切换清,自维护*/
+    b8 idleVolBaseValid;   /*闲时累加电压基点是否有效,消警空闲切换清,自维护*/
     u8 idleVolCtnuSmlRiseCnt;  /*消警切换压合清零,也自维护*/
     u8 idleVolCtnuSmlDownCnt;  /*消警切换压合清零,也自维护*/
     u8 idleTmprUpSmlCnt;  /*消警压合清零,也自维护*/
@@ -96,9 +95,10 @@ typedef struct
     u8 ccdVolRiseAbnmCnt;  /*自维护*/
     b8 cvcCurRiseAbnmValid;  /*恒压充电流上升异常点是否有效,切换清,自维护*/
     u8 cvcCurRiseAbnmCnt;  /*自维护*/
-    b8 flowIdleVolIntvlRiseBaseValid;  /*流程闲时电压间隔上波动基点是否有效,空闲切换清,自维护*/
+    b8 flowIdleVolIntvlRiseBaseValid;  /*流程闲时电压间隔上波动基点是否有效,消警空闲切换清,自维护*/
     b8 flowCcdcVolIntvlFluctBaseValid;  /*流程cc/dc电压间隔波动基点是否有效,切换清,自维护*/
     b8 ccdcVolBigDownValid;  /*是否进入容量区间,切换清,自维护*/
+    b8 idleProtEna;  /*临时方案,压合后流程前不算闲时,不启动的通道不进闲时*/
 }ChnProtBuf;
 
 /*串联子电芯*/
@@ -107,13 +107,43 @@ typedef struct cellTag
     u16 cellIdxInTray;   /*tray内索引,不含主通道*/
     u16 genIdxInTray;  /*tray内子主统排索引*/
     u16 tmprIdx;  /*温度索引*/
-    u8 cellIdxInChnl;   /*通道内索引*/
+    u8 cellIdxInChn;   /*通道内索引*/
     u8 lowCellIdxInChn;  /*下位机通道内电芯映射*/
     struct channelTag *chn;   /*所属通道*/
-    u32 capCtnu;   /*续接容量前工步已跑容量*/
-    u32 capFlowCrnt;   /*累积容量，不含当前工步*/
+    u32 cellCapCtnu;   /*续接容量前工步已跑容量,旁路串联有效*/
+    u32 cellCapFlowCrnt;   /*累积容量，不含当前工步,旁路串联有效*/
+    u32 cellCapStep;   /*当前工步容量,含续接,旁路串联有效*/
     ChnProtBuf chnProtBuf;
+    u32 cellStepRunTime;  /*旁路串联有效*/
+    u8eLowBypsSwSta swState;  /*旁路串联有效*/
+    u8 cellCause;  /*旁路串联有效*/
 }Cell;
+
+/*带旁路切换板的串联的控制数据*/
+typedef struct
+{
+    b8 needStart;   /*仅用于启动/续接时筛选主通道,不参与流程*/
+    b8 hasCtnuStepId;  /*用于续接时查找工步号*/
+    u8 rsvd[2];
+    u32 startCell;  /*上位机启动或续接的电芯*/
+    u32 runCell;   /*预期切入运行的电芯,保护逻辑时以通道运行态为前提*/
+    u32 waitCell;   /*等待参与流程的电芯*/
+    u32 endingCell;  /*正在工步截止的电芯,最后一条运行数据,是runCell的特殊子集*/
+    u32 nmlEndCell;  /*正常已工步截止的电芯,以通道运行态为前提*/
+    u32 stopedCell;  /*保护或指令停止的电芯*/
+    u32 pausedCell;  /*保护或指令暂停的电芯*/
+    u32 stopingCell; /*一次命令下位机截止的电芯,流程内保持增量*/
+    u32 idleSwCell;   /*仅用于空闲时切入切出,不参与流程*/
+    u32 idleCutInCell;   /*空闲时切入记录,除判断闲时保护外不参与流程*/
+}BypsSeriesInd;
+
+/*循环运行数据*/
+typedef struct
+{
+    u8 loopStepId; /*循环工步自身工步ID*/
+    u8 jumpStepId; /*跳转到哪个工步ID,与上位机收发时,该字段保留*/
+    u16 jumpAmt;   /*循环剩余次数*/
+}LoopDscr;
 
 /*主通道,含并联*/
 typedef struct channelTag
@@ -124,33 +154,37 @@ typedef struct channelTag
     u8 lowChnIdxInBox;  /*下位机通道映射*/
     u8 chnIdxInBox;    /*box内主通道索引*/
     u8 chnCellAmt;    /*通道内电芯数量,串联时有效,不含预留*/
-    u8 stepIdTmp; /*todo, 临时用,要删除*/
-    u8 stepIdPre; /*todo, 临时用,要删除*/
-    u8eStepType stepTypeTmp;  /*todo,待删除*/
-    u8eChgType chgTypePre;  /*todo,待删除*/
-    u8eStepSubType stepSubType;  /*todo,待修正*/
+    u8 chnStepId; /*当前工步号*/
+    u8eStepType chnStepType;  /*工步类型*/
+    u8eChgType chgTypePre;  /*记录充放电类型,用于累积*/
+    u8eStepSubType stepSubType;
     u8eMedChnState chnStateMed;
     u8 lowCause;  /*下位机上送的异常码*/
     u8eStepType upStepType;  /*给上位机的工步类型,同上,跟着工步号走*/
     u8 dynStaCnt;  /*不稳定状态计数,用于防呆,进入非稳定态时清零*/
+    u8 noDataCnt;  /*采样有回复但无数据次数*/
     b8 smplPres;  /*托盘采样有效,采样生成后清零,是否产生通道数据*/
     b8 beWiNp;  /*是否占用了负压资源*/
-    b8 idleProtEna;  /*临时方案,压合后流程前不算闲时,不启动的通道不进闲时*/
+    u16 tmprPower;  /*功率管温度*/
     struct powerBoxTag *box;     /*所属电源箱*/
     s32 volInner;  /*内部电压*/
+    s32 volBus;  /*母线电压*/
     u32 capCtnu;   /*续接前工步已跑容量*/
     u32 capLow;  /*下位机上传容量,不含续接*/
     u32 capStep;   /*当前工步容量,含续接*/
     u32 capFlowCrnt;   /*当前电流方向累积容量，不含当前工步容量*/
     u32 capChgTtl;   /*充电总容量,含累积容量,不含当前工步容量*/
     u32 capDisChgTtl;   /*放电总容量,含累积容量,不含当前工步容量*/
-    u32 stepRunTime;  /*工步运行态维持时间*/
+    u32 stepRunTime;  /*工步运行时间,不含续接*/
     u32 stepRunTimeCtnu;  /*续接时已跑时间*/
     u32 stepRunTimeBase;  /*记录工步转运行态的下位机时间戳ms*/
     Cell *cell;
-    FlowStepEntry *flowEntry;  /*流程入口*/
-    FlowNode *stepNode;   /*当前工步节点*/
+    BypsSeriesInd *bypsSeriesInd;  /*带旁路切换时非空,否则为空*/
+    FlowStepEntry *flowStepEntry;  /*流程入口*/
+    FlowProtEntry *flowProtEntry;  /*流程保护入口,不含工步保护*/
+    StepNode *crntStepNode;   /*上电后流程前以及流程正常结束后为空*/
     ChnProtBuf chnProtBuf; /*保护过程数据*/
+    LoopDscr loopDscr[LoopAmtMax];  /*循环工步维护*/
 }Channel;
 
 typedef struct
@@ -165,11 +199,16 @@ typedef struct
     BoxCtrlInd boxCtrlInd;
 }BoxCtrlWaitSend;
 
-/*todo,1和2可以合并,现在只是方便联调*/
+/*库位维护标志*/
+/*上位机发起的离开,通知级联并收到应答后清维护*/
+/*防呆触发的离开,先清维护再通知级联*/
+/*这个逻辑用于区分收到级联应答时是否转给上位机*/
 typedef u8 u8eBoxWorkMode;
 #define BoxModeManu  0x00  /*生产*/
-#define BoxModeMntn  0x01  /*维护,含升级修调*/
-#define BoxModeCri  0x02
+#define BoxModeMntnFixt  0x01  /*工装维护*/
+#define BoxModeMntnCali  0x02  /*修调维护*/
+#define BoxModeMntnBoxUpd  0x04  /*电源升级*/
+#define BoxModeMntnNdbdUpd  0x08  /*针床升级,待补充*/
 
 typedef struct powerBoxTag
 {
@@ -195,6 +234,7 @@ typedef struct powerBoxTag
     u32 maxCur;
     u8 boxChnAmt;  /*实际使用通道数量,不含预留*/
     Channel *chn;  /*非并箱时箱内通道，并箱时所属通道*/
+    BoxCtrlWaitSend seriesSwWaitSend;  /*空闲时切入切出控制,入链有效,发送后出链复位*/
     BoxCtrlWaitSend ctrlWaitSend;  /*等待发送的控制,入链有效,发送后出链复位*/
     BoxCtrlInd ctrlWaitAck;  /*已发送但等待应答的控制*/
 }Box;
@@ -208,10 +248,12 @@ typedef struct
     u8eNdbdWarnType bit2IdxWarn[Align8(BitWarnCri)];
     u8 tmprAmtPerCell;  /*每电芯占据温度通道个数*/
     u8 slotTmprAmt;  /*库位温度个数*/
+    u8 slotWaterTmprAmt;  /*库位水温个数*/
     b8 ndbdDataValid;  /*数据是否有效,与plc/单片机在线有关*/
     u32 ndbdSmplTsSec;  /*记录采到针床数据的时间戳,仅用于保护时判断是否同一个采样*/
     u16 *cellTmpr;
     u16 *slotTmpr;
+    u16 *slotWaterTmpr;
 }NdbdData;
 
 typedef struct
@@ -244,16 +286,6 @@ typedef struct
     u8 chnCellAmt;  /*满配单通道电芯数*/
     u8 rsvd;
 }TrayBoxCfg;
-
-/*todo,这个临时用,以后保存工步保护后用StepNpCfg替换掉*/
-typedef struct
-{
-    u8eNpType npType;
-    u8 rsvd;
-    s16 stepNpExpect;
-    s16 stepNpMax;
-    s16 stepNpMin;
-}StepNpReq;
 
 typedef struct
 {
@@ -290,15 +322,15 @@ typedef struct
     u32 smplSeqUpReq;  /*上位机请求序号,即未确认序号,其前一条不能被覆盖*/
     u32 smplSeqMax;   /*合法的最大序号*/
     u32 smplDiskAddrBase;  /*磁盘存储基址*/
-    u32 smplDiskAddrMax;  /*磁盘最后地址,之后回头*/
+    u32 smplDiskAddrMax;  /*磁盘最后有效地址,之后回头*/
     u32 smplDiskAddr;  /*磁盘存储待写入地址*/
     u32 smplDiskAmt;  /*磁盘存储采样数量*/
     u8 *smplBufAddrBase;  /*缓存采样基址*/
-    u8 *smplBufAddrMax;  /*缓存最后地址,之后回头*/
+    u8 *smplBufAddrMax;  /*缓存最后有效地址,之后回头*/
     u8 *smplBufAddr;  /*缓存采样待写入地址*/
     u32 smplBufAmt;  /*缓存采样数量*/
     u16 smplChnAmt;  /*通道计数,一轮下来没有通道数据就不产生采样*/
-    b8 upSmplRst;  /*指示上位机采样复位,仅在上电首次联机时有效*/
+    b8 upSmplRstInd;  /*指示上位机采样复位*/
     b8 auxDataDone;  /*针床温度等辅助数据是否准备,托盘采样生成后清零*/
 }SmplSaveMgr;
 
@@ -335,20 +367,26 @@ typedef struct
 
 typedef struct
 {
-    b8 mixProtHpn[MixExpAmt];  /*组合发生,消警清零*/
+    u32 mixProtHpn[MixExpAmt];  /*非零则组合发生,消警清零,低24bit分四组记录为真的因子*/
     b8 policyActOver[Align8(PolicyCri)];  /*已经做完,消警清零*/
     b8 policyActNeed[Align8(PolicyCri)];  /*需要做(含已做),消警清零*/
     u32 policyActSec[PolicyCri];
+    u32 newNdbdNpTs;  /*负压时间戳*/
+    u32 newNdbdNpTsBak;  /*应客户要求,负压突升3个点才算,自维护*/
     u16eCauseCode trayCauseNew;   /*整盘保护,生成采样后清零,不能在逻辑前清*/
     u16eCauseCode trayCausePre;   /*整盘保护,消警压合清零*/
-    b8 policyNdbdBrkNeed;    /*针床脱开特殊,自维护,保护策略执行后清零*/
+    s16 npBigRiseBase;  /*应客户要求,负压突升3个点才算,自维护*/
     s16 preNdbdNp;  /*负压都带符号*/
     s16 newNdbdNp;
+    s16 newFanWarn;
+    s16 newGasWarn;
     s16 newSmokeWarn;
     s16 newCoWarn;
+    b8 policyNdbdBrkNeed;    /*针床脱开特殊,自维护,保护策略执行后清零*/
     b8 preNdbdValid;    /*上次针床数据是否有效,自维护,压合延时后清零*/
     b8 newNdbdValid;    /*本次次针床数据是否有效,自维护*/
     b8 npWiSw;   /*是否正在负压切换,自维护*/
+    u8 npBigRiseCnt;  /*应客户要求,负压突升3个点才算,自维护*/
     u8 smokeCtnuHpnCnt;  /*消警压合清零,也自维护*/
     u8 coCtnuHpnCnt;  /*消警压合清零,也自维护*/
     u8 allSlotTmprUpLmtCnt;  /*消警压合清零,也自维护*/
@@ -367,6 +405,12 @@ typedef struct
     u16 noUsedChnIdx[16];
 }SpecsMap;
 
+
+/*整体不保护的bitmap*/
+typedef u8 u8eProtDisable;
+#define ProtDisableTouch 0x01  /*未压合不保护*/
+#define ProtDisableMntn 0x02  /*修调工装等维护不保护*/
+
 typedef struct trayTag
 {
     u8 trayIdx;
@@ -377,9 +421,9 @@ typedef struct trayTag
     u8 tmprSmplIdxBase;  /*托盘首个温度盒索引,dev-idx*/
     u8 ndbdCtrlByMcu;  /*0--plc,1--mcu*/
     u8 plcIdx;  /*所处plc-idx*/
-    b8 protEnable;  /*托盘压合后2秒开始保护*/
+    u8eProtDisable protDisable;  /*托盘压合后2秒开始保护*/
     b8 trayWarnPres;  /*保护或防呆后置位,只有上位机消警才清零*/
-    u8eBoxWorkMode trayWorkMode;  /*维护时不保护针床数据*/
+    u8eBoxWorkMode trayWorkMode;  /*维护时不保护*/
     u16 trayChnAmt;  /*实际主通道数量,不含预留*/
     u16 trayCellAmt;  /*实际电芯数量*/
     u16 genChnAmt; /*实际主/子不分的通道数量,不含预留*/
@@ -399,6 +443,9 @@ typedef struct trayTag
     Timer npSwRstDelayTmr;  /*针床脱开恢复负压开关延时*/
     Timer npSwProtDelayTmr;  /*负压切换保护延时*/
     Timer ndbdBrkWaitNpTmr;  /*针床脱开等破真空延时*/
+    Timer mntnExprTmr;  /*维护防呆定时*/
+    TrayProtEntry *trayProtEntry;  /*托盘保护*/
+    FlowRecvCtrl *flowRecvCtrl;  /*控制流程和保护接收*/
 }Tray;
 
 /*收到上位机消息后的应答有两类,立即应答和延后应答*/
@@ -435,6 +482,7 @@ typedef struct canTag
     Timer waitCanAckTmr;
     Timer canSmplLoopTmr;  /*采样定时器每can独立*/
     ListD ctrlWaitList;  /*BoxCtrlWaitSend, 等待发送的控制*/
+    ListD ctrlCellWaitList;  /*BoxCtrlCellWaitSend, 等待发送的电芯切入切出*/
     ListD auxWaitList;  /*CanAuxCmdBuf,等待发送的辅助类消息*/
     CanAuxCmdBuf *waitAckAuxCmd; /*已发送，等应答中*/
     Box *boxWaitCtrlAck;
@@ -460,12 +508,16 @@ typedef struct
     u8 actAddr; /*实际拨码地址,不含基址*/
     u8 cmmuAddr;  /*协议通讯地址,含基址*/
     b8 online;  /*在线与否,不影响转发消息*/
-    u8 smplExprCnt; /*超时次数*/
+    u8 onlineDelayCnt; /*联机后延时采样*/
+    u8 smplExprCnt; /*采样超时次数*/
     u8 devVer;
     u8 tmprAmt4Cell;  /*实际有效数量,不含预留*/
     u8 tmprBase4Cell;
     u8 tmprAmt4Loc;  /*实际有效数量,不含预留*/
     u8 tmprBase4Loc;
+    u8 tmprAmt4Water;  /*水温,实际有效数量,不含预留*/
+    u8 tmprBase4Water;
+    u8 genWaterTmprIdx;  /*温度盒到水温映射*/
     u8 genSlotTmprIdx;  /*温度盒到库温映射*/
     u16 genCellTmprIdx;  /*温度盒到电芯映射*/
     u16 tmprChnAmt;   /*温度盒通道数量,含预留*/
@@ -501,6 +553,7 @@ typedef struct
     u8 actAddr; /*实际拨码地址,不含基址*/
     u8 cmmuAddr;  /*协议通讯地址,含基址*/
     b8 online;  /*在线与否,不影响转发消息*/
+    u8 onlineDelayCnt; /*联机延时后采样*/
     u8 smplExprCnt; /*超时次数,用于判断离线*/
     u8 ctrlReTxCnt; /*控制命令重传次数*/
     u8 softVer;
@@ -554,6 +607,7 @@ typedef struct
     b8 needConnUp;  /*是否需要给上位机发联机*/
     u16 cellTmprAmt; /*按满配电芯计算的用于电芯的温度个数,含1芯多温*/
     u8 slotTmprAmt; /*同上*/
+    u8 waterTmprAmt;  /*水温*/
     Cell *cell;
     Channel *chn;
     Box *box;
@@ -564,6 +618,7 @@ typedef struct
     NdbdMcu *ndbdMcu;
     u16 *genCellTmpr;
     u16 *genSlotTmpr;
+    u16 *genSlotWaterTmpr;
     u32 tmprSmplTsSec;  /*记录采到温度数据的时间戳,仅用于保护时判断是否同一个采样*/
     Timer devAppRstTmr;
     u8eUpChnState chnStaMapMed2Up[Align8(ChnMedStaCri)];
@@ -573,8 +628,11 @@ typedef struct
 extern DevMgr *gDevMgr;
 extern u16 gProtoSoftVer;
 extern u16 gMediumSoftVer;
+extern u16 gProtoSmplVer;
 extern u8 gLowProtoVer;
 extern u8 gNdbdMcuProtoVer;
+extern u8eBoxType gTrayBoxType;
+extern u8 gUsedMode;
 
 #ifdef __cplusplus
 extern "C"  {

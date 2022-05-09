@@ -835,6 +835,22 @@
       <configSetting altId="debug0.tdi.p110" configurationId="debug0.tdi"/>
       <configSetting altId="debug0.tdo.p109" configurationId="debug0.tdo"/>
       <configSetting altId="debug0.tms.p108" configurationId="debug0.tms"/>
+      <configSetting altId="p000.output.low" configurationId="p000"/>
+      <configSetting altId="p000.gpio_mode.gpio_mode_out.low" configurationId="p000.gpio_mode"/>
+      <configSetting altId="p001.output.low" configurationId="p001"/>
+      <configSetting altId="p001.gpio_mode.gpio_mode_out.low" configurationId="p001.gpio_mode"/>
+      <configSetting altId="p002.output.low" configurationId="p002"/>
+      <configSetting altId="p002.gpio_mode.gpio_mode_out.low" configurationId="p002.gpio_mode"/>
+      <configSetting altId="p003.output.low" configurationId="p003"/>
+      <configSetting altId="p003.gpio_mode.gpio_mode_out.low" configurationId="p003.gpio_mode"/>
+      <configSetting altId="p004.output.low" configurationId="p004"/>
+      <configSetting altId="p004.gpio_mode.gpio_mode_out.low" configurationId="p004.gpio_mode"/>
+      <configSetting altId="p005.output.low" configurationId="p005"/>
+      <configSetting altId="p005.gpio_mode.gpio_mode_out.low" configurationId="p005.gpio_mode"/>
+      <configSetting altId="p006.output.low" configurationId="p006"/>
+      <configSetting altId="p006.gpio_mode.gpio_mode_out.low" configurationId="p006.gpio_mode"/>
+      <configSetting altId="p007.output.low" configurationId="p007"/>
+      <configSetting altId="p007.gpio_mode.gpio_mode_out.low" configurationId="p007.gpio_mode"/>
       <configSetting altId="p015.output.high" configurationId="p015"/>
       <configSetting altId="p015.gpio_mode.gpio_mode_out.high" configurationId="p015.gpio_mode"/>
       <configSetting altId="p100.bus.asynch0.d00" configurationId="p100"/>
@@ -905,6 +921,14 @@
       <configSetting altId="p404.gpio_mode.gpio_mode_out.low" configurationId="p404.gpio_mode"/>
       <configSetting altId="p405.output.low" configurationId="p405"/>
       <configSetting altId="p405.gpio_mode.gpio_mode_out.low" configurationId="p405.gpio_mode"/>
+      <configSetting altId="p406.output.low" configurationId="p406"/>
+      <configSetting altId="p406.gpio_mode.gpio_mode_out.low" configurationId="p406.gpio_mode"/>
+      <configSetting altId="p407.output.low" configurationId="p407"/>
+      <configSetting altId="p407.gpio_mode.gpio_mode_out.low" configurationId="p407.gpio_mode"/>
+      <configSetting altId="p408.output.low" configurationId="p408"/>
+      <configSetting altId="p408.gpio_mode.gpio_mode_out.low" configurationId="p408.gpio_mode"/>
+      <configSetting altId="p409.output.low" configurationId="p409"/>
+      <configSetting altId="p409.gpio_mode.gpio_mode_out.low" configurationId="p409.gpio_mode"/>
       <configSetting altId="p410.spi1.miso" configurationId="p410"/>
       <configSetting altId="p410.gpio_mode.gpio_mode_peripheral" configurationId="p410.gpio_mode"/>
       <configSetting altId="p411.spi1.mosi" configurationId="p411"/>

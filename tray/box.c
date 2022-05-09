@@ -1,6 +1,4 @@
-/*
- * can消息处理入口 
- */
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -162,7 +160,6 @@ void trayRcdChnLastData(Channel *chn)
         protBuf->preVolCell = protBuf->newVolCell;
     }
     protBuf->newPowerBeValid = False;
-    protBuf->preCauseCode = protBuf->newCauseCode;
     protBuf->newCauseCode = CcNone;
     if (NULL != chn->cell)
     {
@@ -182,7 +179,6 @@ void trayRcdChnLastData(Channel *chn)
                 protBuf->preVolCell = protBuf->newVolCell;
             }
             protBuf->newPowerBeValid = False;
-            protBuf->preCauseCode = protBuf->newCauseCode;
             protBuf->newCauseCode = CcNone;
         }
     }
@@ -191,7 +187,7 @@ void trayRcdChnLastData(Channel *chn)
 }
 
 /*生成托盘采样后的保护管理*/
-void trayProtMgrProc(Tray *tray)
+void trayProtMgrEnd(Tray *tray)
 {
     TrayProtMgr *trayProtMgr;
     ChnProtBuf *protBuf;
@@ -204,8 +200,8 @@ void trayProtMgrProc(Tray *tray)
 
     trayProtMgr->slotTmprPre.tmprBeValid = trayProtMgr->slotTmprCrnt.tmprBeValid;
     trayProtMgr->slotTmprPre.tmprVal = trayProtMgr->slotTmprCrnt.tmprVal;
-    trayProtMgr->preNdbdValid = tray->ndbdData.ndbdDataValid;
-    trayProtMgr->preNdbdNp = tray->ndbdData.status[NdbdSenNpVal];
+    trayProtMgr->preNdbdValid = trayProtMgr->newNdbdValid;
+    trayProtMgr->preNdbdNp = trayProtMgr->newNdbdNp;
 
     for (chn=tray->chn,chnCri=tray->chn+tray->trayChnAmt; chn<chnCri; chn++)
     {
@@ -233,7 +229,6 @@ void trayGenTraySmpl(Tray *tray)
     Channel *chnCri;
     Box *box;
     Box *boxCri;
-    u32 upSureSeq; /*上位机确认的最后采样,这里不管转圈与否*/
     b8 mayStop;
 
     traySmplSetAux(tray);
@@ -280,8 +275,9 @@ void trayGenTraySmpl(Tray *tray)
     if (smplMgr->smplEnable)
     {
         u32 smplSeqDisk;
+        u32 upSureSeq; /*上位机确认的最后采样,这里不管转圈与否*/
 
-        smplSeqDisk = smplMgr->smplSeqNext;
+        smplSeqDisk = smplMgr->smplSeqNext;  /*备份*/
         trayUpdSmplSeq(smplMgr);
         upSureSeq = 0==smplMgr->smplSeqUpReq ? smplMgr->smplSeqMax : smplMgr->smplSeqUpReq-1;
         if (upSureSeq==smplMgr->smplSeqNext&&smplMgr->isLooped || smplMgr->upDiscExpr)
@@ -292,7 +288,11 @@ void trayGenTraySmpl(Tray *tray)
 
     #ifdef DebugVersion
     #else
+    #if 1
+        smplDiskWrite(tray->trayIdx, 1, smplMgr->smplBufAddr, smplSeqDisk);
+    #else
         ds_write_file(tray->trayIdx, 1, smplMgr->smplBufAddr, smplSeqDisk, smplMgr->smplSeqUpReq);
+    #endif
     #endif
         trayUpdSmplBuf(smplMgr);
     }
@@ -333,7 +333,17 @@ void freeAuxCanBuf(void *buf)
 
     list = &gCanMgr->auxBufList;
     chain = &((CanAuxCmdBuf *)buf)->chain;
-    ChainInsertD(list, chain);
+    ChainDeleteD(chain);  /*脱离忙时表*/
+    ChainInsertD(list, chain);  /*加入闲时表*/
+    return;
+}
+
+void setCaliAuxCanBuf(CanAuxCmdBuf *auxBuf, Box *box, u16 upMsgId)
+{
+    auxBuf->box = box;
+    auxBuf->reTxCnt = 0;
+    auxBuf->upMsgFlowSeq = gUpItfCb->upMsgFlowSeq;
+    auxBuf->upCanMsgId = upMsgId;
     return;
 }
 
@@ -346,7 +356,7 @@ void boxAuxTx(Can *can, Box *box, CanAuxCmdBuf *auxBuf)
     can->waitAckAuxCmd = auxBuf;
     can->msgIdHasTx = head->msgId;
     canTxMsg(can->canIdx, box->addr, auxBuf->msgBuf, head->msgLen);
-    timerStart(&can->waitCanAckTmr, TidCanRxAuxAck, 200, WiReset);
+    timerStart(&can->waitCanAckTmr, TidCanRxAuxAck, 400, WiReset);
 }
 
 void boxAuxTxTry(u8 canIdx, void *buf)
@@ -382,7 +392,9 @@ void canSmplBoxUpdate(Can *can, u8 beginIdx)
     for (idx=beginIdx; idx<can->boxAmt; idx++)
     {
         box = &gDevMgr->box[can->can2DevBoxIdx[idx]];
-        if (BoxModeManu == box->boxWorkMode)
+    #if 0 /*最初出于节约而不采样,但上和下均有适配不利索,改为继续采样*/
+        if (!(box->tray->trayWorkMode & BoxModeMntnCali))
+    #endif
         {
             if (!can->smplAgainAct)
             {
@@ -432,6 +444,7 @@ void boxSmplTx(Can *can, Box *box)
         head->msgId = BoxMsgSmpl;
         smpl = (BoxSmplCmd *)(buf + sizeof(BoxMsgHead));
         smpl->lastErr = box->reTxSmplCmd||box->reTxSmplCnt>0 ? True : False;
+        smpl->ndbdState = box->tray->ndbdData.status[NdbdStaTouch];
         smpl->rsvd = 0;
         head->msgLen += sizeof(BoxSmplCmd);
     }
@@ -442,7 +455,8 @@ void boxSmplTx(Can *can, Box *box)
         head->msgId = BoxMsgConn;
         conn = (BoxConnCmd *)(buf + sizeof(BoxMsgHead));
         head->msgLen += sizeof(BoxConnCmd);
-        if (BoxTypeParallel != box->boxType)
+        conn->lowWorkMode = gUsedMode;
+        if (BoxTypeParallel != box->boxType)  /*串联换型*/
         {
             ChnCellInd *cellInd;
             Channel *chn;
@@ -505,13 +519,12 @@ void boxSmplTxTry(Timer *timer)
 void boxCtrlMix(Box *box, u16 chnSelectInd, u16 chnCtrlInd)
 {
     BoxCtrlInd *ctrlInd;
-
+    u8 bit;
+    
     ctrlInd = &box->ctrlWaitSend.boxCtrlInd;
     if (ctrlInd->chnSelectInd & chnSelectInd) /*有交集以后者为准*/
     {
-        u8 bit;
-
-        for (bit=0; bit<16; bit++)
+        for (bit=0; bit<box->boxChnAmt; bit++)
         {
             if (BitIsSet(chnSelectInd, bit))
             {
@@ -552,14 +565,34 @@ void boxCtrlAddChn(Box *box, u8 chnIdx, b8 isStart)
     return;
 }
 
-/*todo,挪走*/
+/*todo, 可以与boxCtrlAddChn合并*/
+void boxCtrlAddSeriesCell(Box *box, u8 chnIdx, b8 isStart)
+{
+    BoxCtrlInd *ctrl;
+
+    ctrl = &box->seriesSwWaitSend.boxCtrlInd;
+    BitSet(ctrl->chnSelectInd, chnIdx);
+    if (isStart)
+    {
+        BitSet(ctrl->chnCtrlInd, chnIdx);
+    }
+    else
+    {
+        BitClr(ctrl->chnCtrlInd, chnIdx);
+    }
+    return;
+}
+
+/*恒流后立即以恒流截止点为恒压点的恒压,需要在恒流时预先告诉下位机*/
 b8 stepCvFollowCcChk(Channel *chn)
 {
-    UpStepInfo *step;
-    UpStepInfo *stepNxt;
+    StepObj *step;
+    StepObj *stepNxt;
+    StepNode *stepNode;
 
-    step = (UpStepInfo *)getChnStepInfo(chn->box->tray->trayIdx, chn->stepIdTmp);
-    stepNxt = (UpStepInfo *)getChnStepInfo(chn->box->tray->trayIdx, chn->stepIdTmp+1);
+    step = chn->crntStepNode->stepObj;
+    stepNode = getNxtStep(chn, chn->crntStepNode, False);
+    stepNxt = NULL==stepNode ? NULL : stepNode->stepObj;
     if (StepTypeCCC == step->stepType)
     {
         if (NULL!=stepNxt && StepTypeCVC==stepNxt->stepType
@@ -588,9 +621,11 @@ void boxCtrlTx(Can *can, Box *box)
     ChnCtrl *chnCtrl;
     Channel *chn;
     Channel *chnCri;
-    UpStepInfo *step;
+    StepObj *step;
     u16 chnSelectInd;
     u16 chnCtrlInd;
+    u8 cellIndByteCnt;
+    u8 idx;
 
     buf = gBoxMsgBufTx;
     head = (BoxMsgHead *)buf;
@@ -605,6 +640,13 @@ void boxCtrlTx(Can *can, Box *box)
     chnSelectInd = box->ctrlWaitSend.boxCtrlInd.chnSelectInd;
     chnCtrlInd = box->ctrlWaitSend.boxCtrlInd.chnCtrlInd;
     chnCtrl = ctrlCmd->chnCtrl;
+    if (BoxTypeSeriesWiSw == box->boxType)
+    {
+        cellIndByteCnt = box->tray->boxCfg.chnCellAmt/8;
+        cellIndByteCnt += box->tray->boxCfg.chnCellAmt%8 ? 1 : 0;
+        head->msgLen += Align8(cellIndByteCnt);
+        chnCtrl = (ChnCtrl *)(ctrlCmd->cellCtrlInd + Align8(cellIndByteCnt));
+    }
     for (chn=box->chn,chnCri=chn+box->boxChnAmt; chn<chnCri; chn++)
     {
         if (!BitIsSet(chnSelectInd, chn->chnIdxInBox)) /*不操作*/
@@ -616,12 +658,35 @@ void boxCtrlTx(Can *can, Box *box)
         BitSet(ctrlCmd->chnSelectInd, chn->lowChnIdxInBox);
         if (!BitIsSet(chnCtrlInd, chn->chnIdxInBox)) /*停*/
         {
+            if (NULL != chn->bypsSeriesInd)
+            {
+                BypsSeriesInd *seriesInd;
+
+                seriesInd = chn->bypsSeriesInd;
+                if (ChnStaRun!=chn->chnStateMed || seriesInd->stopingCell==seriesInd->startCell)
+                {
+                    seriesInd->stopingCell = 0xffffffff;
+                }
+
+                for (idx=0; idx<cellIndByteCnt; idx++)
+                {
+                    ctrlCmd->cellCtrlInd[idx] = (seriesInd->stopingCell>>idx*8) & 0xff;
+                }
+            }
             continue;
         }
 
         BitSet(ctrlCmd->chnCtrlInd, chn->lowChnIdxInBox);
-        step = (UpStepInfo *)getChnStepInfo(box->tray->trayIdx, chn->stepIdTmp);
-        chnCtrl->stepId = chn->stepIdTmp;
+        step = chn->crntStepNode->stepObj;
+        if (NULL != chn->bypsSeriesInd)  /*todo,增加多主通道支持*/
+        {
+            for (idx=0; idx<cellIndByteCnt; idx++)
+            {
+                ctrlCmd->cellCtrlInd[idx] = (chn->bypsSeriesInd->runCell>>idx*8) & 0xff;
+            }
+        }
+
+        chnCtrl->stepId = chn->chnStepId;
         chnCtrl->stepType = step->stepType;
         chnCtrl->cvFollowCc = stepCvFollowCcChk(chn);
         if (StepTypeQuiet == step->stepType)
@@ -637,16 +702,16 @@ void boxCtrlTx(Can *can, Box *box)
             chnCtrl->timeStop = step->stepParam[1]-chn->stepRunTimeCtnu;
             chnCtrl->capStop = step->stepParam[3]-chn->capCtnu;
         }
-        else if (step->stepType > StepTypeCVD) /*todo,补充循环啥的*/
-        {
-            return;
-        }
         else
         {
             chnCtrl->paramInd = step->paramEnable;
             memcpy(&chnCtrl->curSet, step->stepParam, sizeof(u32)*5);
             chnCtrl->timeStop = step->stepParam[2]-chn->stepRunTimeCtnu;
             chnCtrl->capStop = step->stepParam[4]-chn->capCtnu;
+            if (!BitIsSet(step->paramEnable, 0))
+            {
+                chnCtrl->curSet = 0; /*恒压工步可能不设工作电流*/
+            }
         }
 
         head->msgLen += sizeof(ChnCtrl);
@@ -682,6 +747,84 @@ void boxCtrlTxTry(Box *box)
     return;
 }
 
+void boxCtrlCellTx(Can *can, Box *box)
+{
+    u8 *buf;
+    BoxMsgHead *head;
+    BoxSeriesSwCmd *ctrlCmd;
+    Channel *chn;
+    Channel *chnCri;
+    u16 chnSelectInd;
+    u16 chnCtrlInd;
+    u8 cellIndByteCnt;
+    u8 idx;
+
+    buf = gBoxMsgBufTx;
+    head = (BoxMsgHead *)buf;
+    head->msgFlowSeq = can->canMsgFlowSeq;
+    head->msgId = BoxMsgCellSw;
+    head->msgLen = sizeof(BoxMsgHead) + sizeof(BoxSeriesSwCmd);
+
+    ctrlCmd = (BoxSeriesSwCmd *)(buf + sizeof(BoxMsgHead));
+    ctrlCmd->chnSelectInd = 0;
+    ctrlCmd->chnCtrlInd = 0;
+    chnSelectInd = box->seriesSwWaitSend.boxCtrlInd.chnSelectInd;
+    chnCtrlInd = box->seriesSwWaitSend.boxCtrlInd.chnCtrlInd;
+
+    cellIndByteCnt = box->tray->boxCfg.chnCellAmt/8;
+    cellIndByteCnt += box->tray->boxCfg.chnCellAmt%8 ? 1 : 0;
+    head->msgLen += Align8(cellIndByteCnt);
+
+    for (chn=box->chn,chnCri=chn+box->boxChnAmt; chn<chnCri; chn++)
+    {
+        if (!BitIsSet(chnSelectInd, chn->chnIdxInBox)) /*不操作*/
+        {
+            continue;
+        }
+
+        BitSet(ctrlCmd->chnSelectInd, chn->lowChnIdxInBox);
+        if (BitIsSet(chnCtrlInd, chn->chnIdxInBox))  /*切入*/
+        {
+            BitSet(ctrlCmd->chnCtrlInd, chn->lowChnIdxInBox);
+        }
+
+        for (idx=0; idx<cellIndByteCnt; idx++)
+        {
+            ctrlCmd->cellCtrlInd[idx] = (chn->bypsSeriesInd->idleSwCell>>idx*8) & 0xff;
+        }
+        chn->bypsSeriesInd->idleSwCell = 0;
+    }
+
+    memset(&box->seriesSwWaitSend.boxCtrlInd, 0, sizeof(BoxCtrlInd));
+    can->msgIdHasTx = head->msgId;
+    canTxMsg(can->canIdx, box->addr, buf, head->msgLen);
+    timerStart(&can->waitCanAckTmr, TidCanRxCellSwAck, 100, WiReset);
+    return;
+}
+
+void boxCtrlCellTxTry(Box *box)
+{
+    Can *can;
+
+    can = &gDevMgr->can[box->canIdx];
+    if (TimerIsRun(&can->waitCanAckTmr))
+    {
+        BoxCtrlWaitSend *seriesSwWaitSend;
+
+        seriesSwWaitSend = &box->seriesSwWaitSend;
+        if (!ChainInList(&seriesSwWaitSend->chain))
+        {
+            ChainInsertD(&can->ctrlCellWaitList, &seriesSwWaitSend->chain);
+        }
+    }
+    else
+    {
+        boxCtrlCellTx(can, box);
+    }
+
+    return;
+}
+
 void canIdleNtfy(Can *can)
 {
     Box *box;
@@ -694,6 +837,17 @@ void canIdleNtfy(Can *can)
         ctrl = Container(BoxCtrlWaitSend, chain, can->ctrlWaitList.next);
         box = Container(Box, ctrlWaitSend, ctrl);
         boxCtrlTx(can, box);
+        ChainDelSafeD(&ctrl->chain);
+        return;
+    }
+
+    if (!ListIsEmpty(&can->ctrlCellWaitList))  /*非空,有切入切出*/
+    {
+        BoxCtrlWaitSend *ctrl;
+
+        ctrl = Container(BoxCtrlWaitSend, chain, can->ctrlCellWaitList.next);
+        box = Container(Box, seriesSwWaitSend, ctrl);
+        boxCtrlCellTx(can, box);
         ChainDelSafeD(&ctrl->chain);
         return;
     }
@@ -730,7 +884,7 @@ void canIdleNtfy(Can *can)
                 {
                     trayGenTraySmpl(tray);  /*至少一个通道有数据,都是临时无意义*/
                 }
-                trayProtMgrProc(tray);
+                trayProtMgrEnd(tray);
                 traySmplMgrRst(tray);
             }
         }
@@ -784,29 +938,22 @@ void boxExprCtrlAck(Timer *timer)
     return;
 }
 
-void boxExprTraySmpl(Tray *tray, Box *box, u8eUpChnState state)
+void boxExprCellSwAck(Timer *timer)
 {
-    Channel *chn;
-    Channel *chnCri;
+    Can *can;
 
-    for (chn=box->chn,chnCri=box->chn+box->boxChnAmt; chn<chnCri; chn++)
-    {
-        if (!chn->smplPres)
-        {
-            traySmplDefChnSmpl(tray, chn, state, CcNone);
-            chn->smplPres = True;
-            tray->smplMgr.smplChnAmt++;
-        }
-    }
-
+    can = Container(Can, waitCanAckTmr, timer);
+    can->canMsgFlowSeq++;
+    canIdleNtfy(can);
     return;
 }
 
-/*todo, 增加统计次数修改离线状态*/
 void boxExprSmplAck(Timer *timer)
 {
     Can *can;
     Box *box;
+    Channel *chn;
+    Channel *chnCri;
 
     can = Container(Can, waitCanAckTmr, timer);
     can->canMsgFlowSeq++;
@@ -826,6 +973,35 @@ void boxExprSmplAck(Timer *timer)
                 box->online = False;
                 box->reTxSmplCnt = 0;
                 sendUpConnNtfy();
+
+                /*这个防呆做的比较难受*/
+                for (chn=box->chn,chnCri=box->chn+box->boxChnAmt; chn<chnCri; chn++)
+                {
+                    if (ChnStaRun==chn->chnStateMed || ChnStaNpWait==chn->chnStateMed
+                        || ChnStaStart==chn->chnStateMed || ChnStaMedEnd==chn->chnStateMed)
+                    {
+                        if (ChnStaRun == chn->chnStateMed) /*正在运行就截止容量*/
+                        {
+                            chnEndCapCalc(chn);
+                        }
+
+                        chn->chnStateMed = ChnStaRun; /*给上位机运行态*/
+                        chnSaveTraySmplOld(chn, Cc1BoxOffline);
+                    }
+                    else if (ChnStaPause == chn->chnStateMed
+                        || ChnStaUpPauseReq==chn->chnStateMed || ChnStaUpPauseStartReq==chn->chnStateMed
+                        || ChnStaUpPauseNpReq==chn->chnStateMed || ChnStaMedPauseWait==chn->chnStateMed)
+                    {
+                        chn->chnStateMed = ChnStaPause;
+                    }
+                    else
+                    {
+                        chn->chnStateMed = ChnStaIdle;
+                    }
+
+                    trayNpChnFree(box->tray, chn);
+                    chnEnterIdle(chn);
+                }
             }
         }
         else  /*立即接着采*/
@@ -838,7 +1014,19 @@ void boxExprSmplAck(Timer *timer)
     box->reTxSmplCmd = False;
     if (!box->online)
     {
-        boxExprTraySmpl(box->tray, box, ChnUpStateOffline);
+        for (chn=box->chn,chnCri=box->chn+box->boxChnAmt; chn<chnCri; chn++)
+        {
+            if (ChnStaRun == chn->chnStateMed)
+            {
+                chn->chnStateMed = ChnStaPause;  /*离线后暂停*/
+            }
+            else
+            {
+                traySmplDefChnSmpl(box->tray, chn, ChnUpStateOffline, CcNone);
+                chn->smplPres = True;
+                box->tray->smplMgr.smplChnAmt++;
+            }
+        }
     }
     canSmplBoxUpdate(can, can->smplCanBoxIdx+1);
 
@@ -913,17 +1101,6 @@ void boxExprCmmnAuxAck(CanAuxCmdBuf *auxBuf)
     return;
 }
 
-void boxExprCfgReadAck(CanAuxCmdBuf *auxBuf)
-{
-    return;
-}
-
-void boxExprCfgSetAck(CanAuxCmdBuf *auxBuf)
-{
-    return;
-}
-
-/*todo, 增加重传,如果离开修调超时，则一直启定时器发送离开修调*/
 void boxExprAuxAck(Timer *timer)
 {
     Can *can;
@@ -947,7 +1124,6 @@ void boxExprAuxAck(Timer *timer)
         head = (BoxMsgHead *)auxBuf->msgBuf;
         gUpItfCb->upMsgFlowSeq = auxBuf->upMsgFlowSeq;
         gCanMgr->boxAuxAckExpr[head->msgId](auxBuf);
-        ChainDelSafeD(&auxBuf->chain);
         freeAuxCanBuf(auxBuf);
     }
 
@@ -957,7 +1133,6 @@ void boxExprAuxAck(Timer *timer)
 
 void _____begin_of_can_ack_recieve_____(){}
 
-/*todo, 采集box信息*/
 void boxRxConnAck(Can *can, Box *box, u8 *pld, u16 len)
 {
     BoxConnAck *connAck;
@@ -1075,8 +1250,9 @@ void boxRxSmplTray(Box *box, u16 chnIndBitMap, u8 *smpl)
     traySmplSetAux(tray);
     for (lowChnIdx=0,chn=box->chn,chnCri=chn+box->boxChnAmt; chn<chnCri; chn++)
     {
-        if (BitIsSet(chnIndBitMap, chn->lowChnIdxInBox))
+        if (BitIsSet(chnIndBitMap, chn->lowChnIdxInBox)) /*通道有数据*/
         {
+            //chn->noDataCnt = 0;
             for (; lowChnIdx<chn->lowChnIdxInBox; lowChnIdx++)
             {
                 if (BitIsSet(chnIndBitMap, lowChnIdx))
@@ -1088,6 +1264,55 @@ void boxRxSmplTray(Box *box, u16 chnIndBitMap, u8 *smpl)
             smpl += lowSmplSize;
             lowChnIdx++;
         }
+    #if 0
+        else  /*通道无数据的防呆做的比较难受*/
+        {
+            if (chn->chnStateMed < ChnStaNpWait)
+            {
+                continue;
+            }
+
+            chn->noDataCnt++;
+            if (chn->noDataCnt < 8)  /*这个时间还不能太短*/
+            {
+                continue;
+            }
+
+            chn->noDataCnt = 0;
+            if (ChnStaRun == chn->chnStateMed) /*正在运行就截止容量*/
+            {
+                chnEndCapCalc(chn);
+                boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStop);
+            }
+            else if (ChnStaNpWait == chn->chnStateMed)
+            {
+                chn->chnStateMed = ChnStaRun; /*为了产生截止数据*/
+            }
+            else if (ChnStaStart == chn->chnStateMed)
+            {
+                chn->chnStateMed = ChnStaRun; /*为了产生截止数据*/
+                boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStop);
+            }
+
+            if (ChnStaRun == chn->chnStateMed) /*给上位机截止数据*/
+            {
+                chnSaveTraySmplOld(chn, Cc1ChnNoData);
+                chn->chnStateMed = ChnStaPause;  /*将运行/启动/负压等待改为暂停态*/
+            }
+            else if (ChnStaUpPauseReq==chn->chnStateMed || ChnStaUpPauseStartReq==chn->chnStateMed
+                || ChnStaUpPauseNpReq==chn->chnStateMed || ChnStaMedPauseWait==chn->chnStateMed)
+            {
+                chn->chnStateMed = ChnStaPause;
+            }
+            else
+            {
+                chn->chnStateMed = ChnStaIdle;
+            }
+
+            trayNpChnFree(box->tray, chn);
+            chnEnterIdle(chn);
+        }
+    #endif
     }
 
     if (0 != box->ctrlWaitSend.boxCtrlInd.chnSelectInd)
@@ -1131,6 +1356,53 @@ void boxRxCtrlAck(Can *can, Box *box, u8 *pld, u16 len)
     return;
 }
 
+void boxRxCfgReadAck(Can *can, Box *box, u8 *pld, u16 len)
+{
+    BoxCfgInd *boxAck;
+    UpCfgReadAck *upAck;
+    CanAuxCmdBuf *auxBuf;
+    UpCfgTlv *tlv;
+    u8 *buf;
+    u32 *param;
+    u16 upPldLen;
+    u8eBoxCfgType cfgType;
+
+    buf = sendUpBuf;
+    upAck = (UpCfgReadAck *)(buf + sizeof(UpMsgHead));
+    boxAck = (BoxCfgInd *)pld;
+    auxBuf = can->waitAckAuxCmd;
+    upAck->rspCode = RspOk;  /*协议没有响应码,可能漏了*/
+    upAck->rsvd = 0;
+    upPldLen = sizeof(UpCfgReadAck);
+    for (cfgType=0,tlv=upAck->cfgTlv,param=boxAck->param; cfgType<BoxCfgCri; cfgType++)
+    {
+        if (!BitIsSet(boxAck->funcSelect, cfgType))
+        {
+            continue;
+        }
+
+        tlv->cfgType = BoxCfgBase + cfgType;
+        tlv->cfgLen = BoxCfgVolRise==cfgType||BoxCfgCurDown==cfgType ? 12 : 8;
+        tlv->cfgVal[0] = BitIsSet(boxAck->funcEnable, cfgType) ? 1 : 0;
+        if (tlv->cfgVal[0])
+        {
+            tlv->cfgVal[1] = *param++;
+            if (12 == tlv->cfgLen)
+            {
+                tlv->cfgVal[2] = tlv->cfgVal[1] >> 16;
+                tlv->cfgVal[1] = (tlv->cfgVal[1] & 0xffff) * 1000;
+            }
+        }
+        tlv = (UpCfgTlv *)((u8 *)tlv + sizeof(UpCfgTlv) + tlv->cfgLen);
+        upPldLen += sizeof(UpCfgTlv) + tlv->cfgLen;
+    }
+
+    gUpItfCb->upMsgFlowSeq = auxBuf->upMsgFlowSeq;
+    sendUpMsg(buf, upPldLen, UpCmdIdUpdCfgRead);
+    freeAuxCanBuf(auxBuf);
+    return;
+}
+
 void boxRxUpdCnfmAck(Can *can, Box *box, u8 *pld, u16 len)
 {
     BoxUpdCnfmAck *boxAck;
@@ -1151,7 +1423,6 @@ void boxRxUpdCnfmAck(Can *can, Box *box, u8 *pld, u16 len)
     upAck->updateVer = boxAck->cnfmVer;
     gUpItfCb->upMsgFlowSeq = auxBuf->upMsgFlowSeq;
     sendUpMsg(buf, sizeof(UpUpdCnfmAck), UpCmdIdUpdCnfm);
-    ChainDelSafeD(&auxBuf->chain);
     freeAuxCanBuf(auxBuf);
     return;
 }
@@ -1177,21 +1448,6 @@ void boxRxUpdSetupAck(Can *can, Box *box, u8 *pld, u16 len)
     gUpItfCb->updMgr.pageSize = boxAck->pageSize;
     gUpItfCb->upMsgFlowSeq = auxBuf->upMsgFlowSeq;
     sendUpMsg(buf, sizeof(UpUpdSetupAck), UpCmdIdUpdSetup);
-    ChainDelSafeD(&auxBuf->chain);
-    freeAuxCanBuf(auxBuf);
-    return;
-}
-
-void boxRxUpdDldAck(Can *can, Box *box, u8 *pld, u16 len)
-{
-    CanAuxCmdBuf *auxBuf;
-    BoxUpdDldAck *boxAck;
-
-    auxBuf = can->waitAckAuxCmd;
-    boxAck = (BoxUpdDldAck *)pld;
-    gUpItfCb->upMsgFlowSeq = auxBuf->upMsgFlowSeq;
-    rspUpCmmn(auxBuf->upCanMsgId, box->tray->trayIdx, boxAck->rspCode);
-    ChainDelSafeD(&auxBuf->chain);
     freeAuxCanBuf(auxBuf);
     return;
 }
@@ -1201,7 +1457,8 @@ void boxRxUpdUpldAck(Can *can, Box *box, u8 *pld, u16 len)
     return;
 }
 
-/*todo,下位机回复错误咋办,尤其是成功一部分后突然给个失败*/
+/*上位机触发的离开修调,需要响应上位机,并通知托盘离开修调*/
+/*中位机防呆触发的离开修调,不通知上位机,也不通知托盘*/
 void boxRxCaliNtfyAck(Can *can, Box *box, u8 *pld, u16 len)
 {
     CanAuxCmdBuf *auxBuf;
@@ -1209,20 +1466,27 @@ void boxRxCaliNtfyAck(Can *can, Box *box, u8 *pld, u16 len)
 
     auxBuf = can->waitAckAuxCmd;
     boxAck = (BoxCaliNtfyAck *)pld;
-    gUpItfCb->upMsgFlowSeq = auxBuf->upMsgFlowSeq;
-    rspUpCaliNtfyAck(box->tray->trayIdx, box->boxIdxInTray, boxAck->rspCode);
+    if (box->tray->trayWorkMode & BoxModeMntnCali)
+    {
+        gUpItfCb->upMsgFlowSeq = auxBuf->upMsgFlowSeq;
+        rspUpCaliNtfyAck(box->tray->trayIdx, box->boxIdxInTray, boxAck->rspCode);
+    }
+    freeAuxCanBuf(auxBuf);
+
     if (boxAck->rspCode==RspOk && !boxAck->caliEnable)
     {
-        box->boxWorkMode = BoxModeManu;    
+        box->boxWorkMode = BoxModeManu;
         box->online = False;
+        if (box->tray->trayWorkMode & BoxModeMntnCali)
+        {
+            trayMntnEnd(box->tray, BoxModeMntnCali);
+        }
     }
-    ChainDelSafeD(&auxBuf->chain);
-    freeAuxCanBuf(auxBuf);
 
     return;
 }
 
-void boxRxCaliCmmnAck(Can *can, Box *box, u8 *pld, u16 len)
+void boxRxCmmnAuxAck(Can *can, Box *box, u8 *pld, u16 len)
 {
     CanAuxCmdBuf *auxBuf;
     BoxCmmnAck *boxAck;
@@ -1231,7 +1495,6 @@ void boxRxCaliCmmnAck(Can *can, Box *box, u8 *pld, u16 len)
     boxAck = (BoxCmmnAck *)pld;
     gUpItfCb->upMsgFlowSeq = auxBuf->upMsgFlowSeq;
     rspUpCmmn(auxBuf->upCanMsgId, box->tray->trayIdx, boxAck->rspCode);
-    ChainDelSafeD(&auxBuf->chain);
     freeAuxCanBuf(auxBuf);
 
     return;
@@ -1239,7 +1502,6 @@ void boxRxCaliCmmnAck(Can *can, Box *box, u8 *pld, u16 len)
 
 void boxRxCaliSmplAck(Can *can, Box *box, u8 *pld, u16 len)
 {
-    BoxMsgHead *boxHead;
     BoxCaliSmplAck *boxAck;
     UpCaliSmplAck *upAck;
     CanAuxCmdBuf *auxBuf;
@@ -1296,19 +1558,8 @@ void boxRxCaliSmplAck(Can *can, Box *box, u8 *pld, u16 len)
     }
 
     sendUpMsg(buf, upPldLen, UpCmdIdCaliSmpl);
-    ChainDelSafeD(&auxBuf->chain);
     freeAuxCanBuf(auxBuf);
 
-    return;
-}
-
-void boxRxCfgReadAck(Can *can, Box *box, u8 *pld, u16 len)
-{
-    return;
-}
-
-void boxRxCfgSetAck(Can *can, Box *box, u8 *pld, u16 len)
-{
     return;
 }
 
@@ -1321,8 +1572,6 @@ void boxRxCfgSetAck(Can *can, Box *box, u8 *pld, u16 len)
 /*目前len可能不准,不作为消息真实长度的依据*/
 void canRxMsg(u8 canId, u8 addr, u8 *data, u16 len)
 {
-	/*CAN即电源柜消息处理入口*/
-
 #if TRAY_ENABLE
     Can *can;
     Box *box;
@@ -1372,22 +1621,24 @@ void boxInit()
     mgr->boxMsgProc[BoxMsgConn] = boxRxConnAck;
     mgr->boxMsgProc[BoxMsgSmpl] = boxRxSmplAck;
     mgr->boxMsgProc[BoxMsgCtrl] = boxRxCtrlAck;
+    mgr->boxMsgProc[BoxMsgCfgRead] = boxRxCfgReadAck;
+    mgr->boxMsgProc[BoxMsgCfgSet] = boxRxCmmnAuxAck;
     mgr->boxMsgProc[BoxMsgUpdCnfm] = boxRxUpdCnfmAck;
     mgr->boxMsgProc[BoxMsgUpdSetup] = boxRxUpdSetupAck;
-    mgr->boxMsgProc[BoxMsgUpdDld] = boxRxUpdDldAck;
+    mgr->boxMsgProc[BoxMsgUpdDld] = boxRxCmmnAuxAck;
     mgr->boxMsgProc[BoxMsgUpdUpld] = boxRxUpdUpldAck;
     mgr->boxMsgProc[BoxMsgCaliNtfy] = boxRxCaliNtfyAck;
-    mgr->boxMsgProc[BoxMsgCaliStart] = boxRxCaliCmmnAck;
+    mgr->boxMsgProc[BoxMsgCaliStart] = boxRxCmmnAuxAck;
     mgr->boxMsgProc[BoxMsgCaliSmpl] = boxRxCaliSmplAck;
-    mgr->boxMsgProc[BoxMsgCaliKb] = boxRxCaliCmmnAck;
-    mgr->boxMsgProc[BoxMsgCaliStop] = boxRxCaliCmmnAck;
-    mgr->boxMsgProc[BoxMsgCfgRead] = boxRxCfgReadAck;
-    mgr->boxMsgProc[BoxMsgCfgSet] = boxRxCfgSetAck;
+    mgr->boxMsgProc[BoxMsgCaliKb] = boxRxCmmnAuxAck;
+    mgr->boxMsgProc[BoxMsgCaliStop] = boxRxCmmnAuxAck;
 
     for (idx=0; idx<BoxMsgCri; idx++)
     {
         mgr->boxAuxAckExpr[idx] = (BoxExprRxAck)boxMsgIgnore;
     }
+    mgr->boxAuxAckExpr[BoxMsgCfgRead] = boxExprCmmnAuxAck;
+    mgr->boxAuxAckExpr[BoxMsgCfgSet] = boxExprCmmnAuxAck;
     mgr->boxAuxAckExpr[BoxMsgUpdCnfm] = boxExprUpdCnfmAck;
     mgr->boxAuxAckExpr[BoxMsgUpdSetup] = boxExprUpdSetupAck;
     mgr->boxAuxAckExpr[BoxMsgUpdDld] = boxExprCmmnAuxAck;
@@ -1397,8 +1648,6 @@ void boxInit()
     mgr->boxAuxAckExpr[BoxMsgCaliSmpl] = boxExprCaliSmplAck;
     mgr->boxAuxAckExpr[BoxMsgCaliKb] = boxExprCmmnAuxAck;
     mgr->boxAuxAckExpr[BoxMsgCaliStop] = boxExprCmmnAuxAck;
-    mgr->boxAuxAckExpr[BoxMsgCfgRead] = boxExprCfgReadAck;
-    mgr->boxAuxAckExpr[BoxMsgCfgSet] = boxExprCfgSetAck;
     
     for (idx=0; idx<SmplModeCri; idx++)
     {

@@ -1,0 +1,311 @@
+make.exe all --print-data-base --no-builtin-variables --no-builtin-rules --question
+# GNU Make 3.82.90
+# Built for i686-pc-mingw32
+# Copyright (C) 1988-2012 Free Software Foundation, Inc.
+# License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+# This is free software: you are free to change and redistribute it.
+# There is NO WARRANTY, to the extent permitted by law.
+
+# Make data base, printed on Mon May 09 16:30:08 2022
+
+# Variables
+
+# automatic
+<D = $(patsubst %/,%,$(patsubst %\,%,$(dir $<)))
+# automatic
+?F = $(notdir $?)
+# environment
+WSLENV = BASH_ENV/u
+# default
+.SHELLFLAGS := -c
+# makefile
+MAKEFLAGS = Rrqp
+# environment
+VSCODE_LOG_NATIVE = false
+# automatic
+?D = $(patsubst %/,%,$(patsubst %\,%,$(dir $?)))
+# automatic
+@D = $(patsubst %/,%,$(patsubst %\,%,$(dir $@)))
+# environment
+HOMEDRIVE = C:
+# automatic
+@F = $(notdir $@)
+# automatic
+^D = $(patsubst %/,%,$(patsubst %\,%,$(dir $^)))
+# makefile
+CURDIR := d:/work/ruisa/mc_r7fa6m4_006
+# default
+SHELL := sh.exe
+# environment
+WINDIR = C:\Windows
+# environment
+VSCODE_NLS_CONFIG = {"locale":"zh-cn","availableLanguages":{"*":"zh-cn"},"_languagePackId":"a78078f10f99ab7adc9063c14c25e7ae.zh-cn","_translationsConfigFile":"C:\\Users\\Administrator\\AppData\\Roaming\\Code\\clp\\a78078f10f99ab7adc9063c14c25e7ae.zh-cn\\tcf.json","_cacheRoot":"C:\\Users\\Administrator\\AppData\\Roaming\\Code\\clp\\a78078f10f99ab7adc9063c14c25e7ae.zh-cn","_resolvedLanguagePackCoreLocation":"C:\\Users\\Administrator\\AppData\\Roaming\\Code\\clp\\a78078f10f99ab7adc9063c14c25e7ae.zh-cn\\57fd6d0195bb9b9d1b49f6da5db789060795de47","_corruptedFile":"C:\\Users\\Administrator\\AppData\\Roaming\\Code\\clp\\a78078f10f99ab7adc9063c14c25e7ae.zh-cn\\corrupted.info","_languagePackSupport":true}
+# environment
+PYCHARM COMMUNITY EDITION = D:\tools\pycharm\PyCharm Community Edition 2022.1\bin;
+# environment
+PATHEXT = .COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC
+# makefile
+MAKEFILE_LIST := 
+# environment
+FPS_BROWSER_USER_PROFILE_STRING = Default
+# environment
+TMP = C:\Users\Administrator\AppData\Local\Temp
+# environment
+VSCODE_VERBOSE_LOGGING = true
+# environment
+PROGRAMW6432 = C:\Program Files
+# environment
+PROGRAMDATA = C:\ProgramData
+# environment
+VSCODE_IPC_HOOK_EXTHOST = \\.\pipe\vscode-ipc-a95c9c33-b8b5-4d42-8438-d8670d5d41cb-sock
+# environment
+VSCODE_CWD = D:\�칫\Microsoft VS Code
+# environment
+PATH = C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Windows\System32\OpenSSH\;D:\users\Downloads\cmder\;C:\ProgramData\Miniconda3;C:\ProgramData\Miniconda3\Scripts;C:\ProgramData\Miniconda3\Library\bin;D:\tools\Git\cmd;D:\tools\tortoiseGit\bin;C:\MinGW\bin\;C:\Program Files\TortoiseSVN\bin;C:\Users\Administrator\AppData\Local\Programs\Python\Python37-32\Scripts\;C:\Users\Administrator\AppData\Local\Programs\Python\Python37-32\;C:\Users\Administrator\AppData\Local\Microsoft\WindowsApps;C:\Program Files\Bandizip\;c:\program files\esafenet\cobra docguard client;D:\�칫\Microsoft VS Code\bin;D:\tools\nmpa\Nmap;D:\tools\understand6.1\SciTools\bin\pc-win64;D:\tools\undestand\SciTools\bin\pc-win64;D:\tools\pycharm\PyCharm Community Edition 2022.1\bin;;D:\tools\pycharm\PyCharm 2021.1.1\bin;
+# environment
+COMMONPROGRAMW6432 = C:\Program Files\Common Files
+# environment
+PROCESSOR_ARCHITECTURE = x86
+# environment
+USERPROFILE = C:\Users\Administrator
+# environment
+BASH_ENV = /etc/bash.bashrc
+# environment
+ALLUSERSPROFILE = C:\ProgramData
+# environment
+VSCODE_LOG_STACK = false
+# environment
+NUMBER_OF_PROCESSORS = 4
+# environment
+ELECTRON_RUN_AS_NODE = 1
+# default
+.FEATURES := target-specific order-only second-expansion else-if shortest-stem undefine oneshell archives jobserver
+# automatic
+%F = $(notdir $%)
+# environment
+CHROME_CRASHPAD_PIPE_NAME = \\.\pipe\crashpad_7048_VVYUHHFNAQQYJOMX
+# environment
+VSCODE_PIPE_LOGGING = true
+# environment
+COMPUTERNAME = HYNN-20220323HP
+# environment
+PROGRAMFILES = C:\Program Files (x86)
+# environment
+DRIVERDATA = C:\Windows\System32\Drivers\DriverData
+# environment
+ORIGINAL_XDG_CURRENT_DESKTOP = undefined
+# environment
+USERNAME = Administrator
+# environment
+PUBLIC = C:\Users\Public
+# environment
+VSCODE_AMD_ENTRYPOINT = vs/workbench/api/node/extensionHostProcess
+# environment
+VSCODE_CODE_CACHE_PATH = C:\Users\Administrator\AppData\Roaming\Code\CachedData\57fd6d0195bb9b9d1b49f6da5db789060795de47
+# environment
+APPLICATION_INSIGHTS_NO_DIAGNOSTIC_CHANNEL = 1
+# environment
+COMMONPROGRAMFILES = C:\Program Files (x86)\Common Files
+# environment
+LOGONSERVER = \\HYNN-20220323HP
+# environment
+VSCODE_HANDLES_UNCAUGHT_ERRORS = true
+# environment
+USERDOMAIN = HYNN-20220323HP
+# environment
+MAKELEVEL := 0
+# default
+MAKE = $(MAKE_COMMAND)
+# default
+MAKECMDGOALS := all
+# default
+MAKE_VERSION := 3.82.90
+# makefile
+.DEFAULT_GOAL := 
+# environment
+ACTEL_FOR_ALTIUM_OVERRIDE = $(subst ,, )
+# environment
+PROGRAMFILES(X86) = C:\Program Files (x86)
+# automatic
+%D = $(patsubst %/,%,$(patsubst %\,%,$(dir $%)))
+# environment
+LOCALAPPDATA = C:\Users\Administrator\AppData\Local
+# environment
+PSMODULEPATH = C:\Program Files\WindowsPowerShell\Modules;C:\Windows\system32\WindowsPowerShell\v1.0\Modules
+# default
+MAKE_COMMAND := make.exe
+# environment
+PROCESSOR_ARCHITEW6432 = AMD64
+# default
+.VARIABLES := 
+# environment
+ALTERA_FOR_ALTIUM_OVERRIDE = $(subst ,, )
+# automatic
+*F = $(notdir $*)
+# environment
+PROCESSOR_IDENTIFIER = Intel64 Family 6 Model 61 Stepping 4, GenuineIntel
+# environment
+OS = Windows_NT
+# environment
+VSCODE_IPC_HOOK = \\.\pipe\9e7283c68e6159fd1e9872b65f264be5-1.67.0-main-sock
+# environment
+HOMEPATH = \Users\Administrator
+# environment
+COMMONPROGRAMFILES(X86) = C:\Program Files (x86)\Common Files
+# environment
+PROMPT = $P$G
+# environment
+MFLAGS = -Rrqp
+# automatic
+*D = $(patsubst %/,%,$(patsubst %\,%,$(dir $*)))
+# environment
+SYSTEMROOT = C:\Windows
+# automatic
++D = $(patsubst %/,%,$(patsubst %\,%,$(dir $+)))
+# automatic
++F = $(notdir $+)
+# environment
+APPDATA = C:\Users\Administrator\AppData\Roaming
+# environment
+TEMP = C:\Users\Administrator\AppData\Local\Temp
+# environment
+COMSPEC = C:\Windows\system32\cmd.exe
+# default
+MAKEFILES := 
+# automatic
+<F = $(notdir $<)
+# environment
+LC_ALL = C
+# automatic
+^F = $(notdir $^)
+# default
+SUFFIXES := 
+# environment
+SYSTEMDRIVE = C:
+# environment
+SESSIONNAME = Console
+# environment
+PROCESSOR_REVISION = 3d04
+# environment
+PYCHARM = D:\tools\pycharm\PyCharm 2021.1.1\bin;
+# environment
+MOZ_PLUGIN_PATH = D:\�칫\fuxiPDF\Foxit PDF Reader\plugins\
+# default
+.INCLUDE_DIRS = C:/MinGW/include
+# default
+.RECIPEPREFIX := 
+# environment
+LANG = C
+# environment
+PROCESSOR_LEVEL = 6
+# environment
+FPS_BROWSER_APP_PROFILE_STRING = Internet Explorer
+# environment
+VSCODE_PID = 7048
+# environment
+USERDOMAIN_ROAMINGPROFILE = HYNN-20220323HP
+# variable set hash-table stats:
+# Load=97/1024=9%, Rehash=0, Collisions=11/113=10%
+
+# Pattern-specific Variable Values
+
+# No pattern-specific variable values.
+
+# Directories
+
+# : could not be stat'd.
+# C:\ProgramData\Miniconda3 (key C:/ProgramData/Miniconda3, mtime 1648719058): 84 files, no impossibilities.
+# D:\tools\nmpa\Nmap (key D:/tools/nmpa/Nmap, mtime 1649380310): 37 files, no impossibilities.
+# D:\users\Downloads\cmder\ (key D:/users/Downloads/cmder/, mtime 1648719153): 11 files, no impossibilities.
+# C:\Windows\System32\WindowsPowerShell\v1.0\ (key C:/Windows/System32/WindowsPowerShell/v1.0/, mtime 1633527134): 31 files, no impossibilities.
+# . (key d:/work/ruisa/mc_r7fa6m4_006, mtime 1652083828): 42 files, no impossibilities.
+# C:\Program Files\Bandizip\ (key C:/Program Files/Bandizip/, mtime 1649907960): 21 files, no impossibilities.
+# C:\MinGW\bin\ (key C:/MinGW/bin/, mtime 1650624214): 127 files, no impossibilities.
+# D:\tools\tortoiseGit\bin (key D:/tools/tortoiseGit/bin, mtime 1648708764): 99 files, no impossibilities.
+# C:\ProgramData\Miniconda3\Library\bin (key C:/ProgramData/Miniconda3/Library/bin, mtime 1648719293): 226 files, no impossibilities.
+# C:\Windows\System32\OpenSSH\: could not be stat'd.
+# C:\ProgramData\Miniconda3\Scripts (key C:/ProgramData/Miniconda3/Scripts, mtime 1648719293): 73 files, no impossibilities.
+# D:\tools\undestand\SciTools\bin\pc-win64 (key D:/tools/undestand/SciTools/bin/pc-win64, mtime 1652080989): 52 files, no impossibilities.
+# c:\program files\esafenet\cobra docguard client (key c:/program files/esafenet/cobra docguard client, mtime 1652084154): 124 files, no impossibilities.
+# C:\Windows (key C:/Windows, mtime 1652080785): 128 files, no impossibilities.
+# D:\�칫\Microsoft VS Code\bin (key D:/�칫/Microsoft VS Code/bin, mtime 1651807736): 4 files, no impossibilities.
+# C:\Users\Administrator\AppData\Local\Microsoft\WindowsApps (key C:/Users/Administrator/AppData/Local/Microsoft/WindowsApps, mtime 1652080757): 7 files, no impossibilities.
+# C:\Windows\System32\Wbem (key C:/Windows/System32/Wbem, mtime 1648543817): 171 files, no impossibilities.
+# C:\Program Files\TortoiseSVN\bin (key C:/Program Files/TortoiseSVN/bin, mtime 1651129951): 50 files, no impossibilities.
+# D:\tools\understand6.1\SciTools\bin\pc-win64: could not be stat'd.
+# D:\tools\Git\cmd (key D:/tools/Git/cmd, mtime 1648708476): 8 files, no impossibilities.
+# C:\Windows\system32 (key C:/Windows/system32, mtime 1652080811): 3120 files, no impossibilities.
+# D:\tools\pycharm\PyCharm Community Edition 2022.1\bin: could not be stat'd.
+# D:\tools\pycharm\PyCharm 2021.1.1\bin (key D:/tools/pycharm/PyCharm 2021.1.1/bin, mtime 1651020479): 29 files, no impossibilities.
+# C:\Users\Administrator\AppData\Local\Programs\Python\Python37-32\ (key C:/Users/Administrator/AppData/Local/Programs/Python/Python37-32/, mtime 1648004090): 15 files, no impossibilities.
+# C:\Users\Administrator\AppData\Local\Programs\Python\Python37-32\Scripts\ (key C:/Users/Administrator/AppData/Local/Programs/Python/Python37-32/Scripts/, mtime 1648004098): 7 files, no impossibilities.
+
+# 4466 files, no impossibilities in 26 directories.
+
+# Implicit Rules
+
+# No implicit rules.
+
+# Files
+
+# Not a target:
+all:
+#  Command line target.
+#  Implicit rule search has been done.
+#  File does not exist.
+#  File has not been updated.
+
+# Not a target:
+.SUFFIXES:
+#  Implicit rule search has not been done.
+#  Modification time never checked.
+#  File has not been updated.
+
+# Not a target:
+Makefile:
+#  Implicit rule search has been done.
+#  File does not exist.
+#  File has been updated.
+#  Failed to be updated.
+
+# Not a target:
+makefile:
+#  Implicit rule search has been done.
+#  File does not exist.
+#  File has been updated.
+#  Failed to be updated.
+
+# Not a target:
+.DEFAULT:
+#  Implicit rule search has not been done.
+#  Modification time never checked.
+#  File has not been updated.
+
+# Not a target:
+GNUmakefile:
+#  Implicit rule search has been done.
+#  File does not exist.
+#  File has been updated.
+#  Failed to be updated.
+
+# files hash-table stats:
+# Load=6/1024=1%, Rehash=0, Collisions=0/15=0%
+# VPATH Search Paths
+
+# No 'vpath' search paths.
+
+# No general ('VPATH' variable) search path.
+
+# strcache buffers: 8 (7) / strings = 4234 / storage = 64283 B / avg = 15 B
+# current buf: size = 8174 B / used = 7135 B / count = 469 / avg = 15 B
+# other used: total = 56109 B / count = 3765 / avg = 14 B
+# other free: total = 70 B / max = 14 B / min = 8 B / avg = 10 B
+
+# strcache performance: lookups = 4500 / hit rate = 5%
+# hash-table stats:
+# Load=4234/8192=52%, Rehash=0, Collisions=1955/4500=43%
+# Finished Make data base on Mon May 09 16:30:08 2022
+
+ 
+make.exe: *** No rule to make target 'all'.  Stop.
+

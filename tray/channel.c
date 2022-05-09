@@ -1,915 +1,1 @@
-
-
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-
-#include "basic.h"
-#if TRAY_ENABLE
-#include "define.h"
-#include "enum.h"
-#include "type.h"
-#include "cause.h"
-#include "func.h"
-#include "timer.h"
-#include "log.h"
-#include "entry.h"
-#include "flow.h"
-#include "box.h"
-#include "host.h"
-#include "channel.h"
-#include "protect.h"
-#include "tray.h"
-
-ChnMgr *gChnMgr;
-
-void chnProcIgnore()
-{
-    return;
-}
-
-void chnProtBufInit(ChnProtBuf *chnProtBuf)
-{
-    chnProtBuf->cellTmprPre.tmprBeValid = False;
-    chnProtBuf->cellTmprCrnt.tmprBeValid = False;
-    chnProtBuf->cellTmprCrnt.tmprInvalidCnt = 0;
-    chnProtBuf->newPowerBeValid = False;
-    chnProtBuf->prePowerBeValid = False;
-    chnProtBuf->newCauseCode = CcNone;
-    chnProtBuf->preCauseCode = CcNone;
-    chnProtBuf->mixSubHpnBitmap = 0;
-    return;
-}
-
-/*判断通道是否在工步运行态*/
-b8 chnBeInRun(Channel *chn)
-{
-    if (ChnStaRun==chn->chnStateMed || ChnStaLowNmlEnd==chn->chnStateMed)
-    {
-        return True;
-    }
-
-    return False;
-}
-
-void chnRunTimeUpd(Channel *chn, u32 timeStampMs)
-{
-    if (timeStampMs < chn->stepRunTimeBase)
-    {
-        chn->stepRunTime = (u32)0xffffffff - chn->stepRunTimeBase + 1 + timeStampMs;
-    }
-    else
-    {
-        chn->stepRunTime = timeStampMs - chn->stepRunTimeBase;
-    }
-    return;
-}
-
-void chnEnterIdle(Channel *chn)
-{
-    Cell *cell;
-    Cell *cellCri;
-
-    chn->capStep = 0;
-    chn->capCtnu = 0;
-    chn->stepRunTimeBase = 0;
-    chn->stepRunTime = 0;
-    chn->stepRunTimeCtnu = 0;
-    if (ChnStaIdle == chn->chnStateMed)
-    {
-        chn->stepTypeTmp = StepTypeNull;
-        chn->stepIdTmp = StepIdNull;
-    }
-    chn->chnProtBuf.idleTimeStampSec = sysTimeSecGet();
-    chn->chnProtBuf.idleVolBaseValid = False;
-    chn->chnProtBuf.flowIdleVolIntvlRiseBaseValid = False;
-
-    if (NULL != chn->cell)
-    {
-        for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++)
-        {
-            cell->chnProtBuf.idleTimeStampSec = sysTimeSecGet();
-            cell->chnProtBuf.idleVolBaseValid = False;
-            cell->chnProtBuf.flowIdleVolIntvlRiseBaseValid = False;
-        }
-    }
-    return;
-}
-
-void chnEnterRun(Channel *chn)
-{
-    Cell *cell;
-    Cell *cellCri;
-
-    chn->stepRunTime = 0;
-
-    chn->chnProtBuf.idleTimeStampSec = sysTimeSecGet();
-    chn->chnProtBuf.idleVolBaseValid = False;
-    chn->chnProtBuf.flowIdleVolIntvlRiseBaseValid = False;
-
-    if (NULL != chn->cell)
-    {
-        for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++)
-        {
-            cell->chnProtBuf.idleTimeStampSec = sysTimeSecGet();
-            cell->chnProtBuf.idleVolBaseValid = False;
-            cell->chnProtBuf.flowIdleVolIntvlRiseBaseValid = False;
-        }
-    }
-    return;
-}
-
-void chnStepSwPre(Channel *chn)
-{
-    Cell *cell;
-    Cell *cellCri;
-    ChnProtBuf *chnProtBuf;
-
-    chnProtBuf = &chn->chnProtBuf;
-    chnProtBuf->idleVolCtnuSmlRiseCnt = 0;
-    chnProtBuf->idleVolCtnuSmlDownCnt = 0;
-    chnProtBuf->quietVolDownBaseValid = False;
-    chnProtBuf->cccVolDownAbnmValid = False;
-    chnProtBuf->ccVolIntvlFluctBaseValid = False;
-    chnProtBuf->cccVolRiseCtnuCnt = False;
-    chnProtBuf->cccVolDownCtnuCnt = False;
-    chnProtBuf->ccdVolRiseAbnmValid = False;
-    chnProtBuf->cvcCurRiseAbnmValid = False;
-    chnProtBuf->flowIdleVolIntvlRiseBaseValid = False;
-    chnProtBuf->flowCcdcVolIntvlFluctBaseValid = False;
-    chnProtBuf->ccdcVolBigDownValid = False;
-    chnProtBuf->idleVolBaseValid = False;
-
-    if (NULL != chn->cell)
-    {
-        for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++)
-        {
-            chnProtBuf = &cell->chnProtBuf;
-            chnProtBuf->idleVolCtnuSmlRiseCnt = 0;
-            chnProtBuf->idleVolCtnuSmlDownCnt = 0;
-            chnProtBuf->quietVolDownBaseValid = False;
-            chnProtBuf->cccVolDownAbnmValid = False;
-            chnProtBuf->ccVolIntvlFluctBaseValid = False;
-            chnProtBuf->cccVolRiseCtnuCnt = False;
-            chnProtBuf->cccVolDownCtnuCnt = False;
-            chnProtBuf->ccdVolRiseAbnmValid = False;
-            chnProtBuf->cvcCurRiseAbnmValid = False;
-            chnProtBuf->flowIdleVolIntvlRiseBaseValid = False;
-            chnProtBuf->flowCcdcVolIntvlFluctBaseValid = False;
-            chnProtBuf->ccdcVolBigDownValid = False;
-            chnProtBuf->idleVolBaseValid = False;
-        }
-    }
-    return;
-}
-
-u8eChgType getChgType(Channel *chn, u8 stepId)
-{
-    UpStepInfo *step;
-
-    step = (UpStepInfo *)getChnStepInfo(chn->box->tray->trayIdx, stepId);
-    if (NULL == step)
-    {
-        return ChgTypeCri;
-    }
-
-    if (StepTypeCCC == step->stepType || StepTypeCCCVC == step->stepType
-        || StepTypeCVC == step->stepType)
-    {
-        return ChgTypeChg;
-    }
-    if (StepTypeCCD == step->stepType || StepTypeCCCVD == step->stepType
-        || StepTypeCVD == step->stepType)
-    {
-        return ChgTypeDisChg;
-    }
-
-    return ChgTypeCri;
-}
-
-/*下位机正常截止,这个是执行保护逻辑之后的逻辑*/
-void chnStepLowNmlEnd(Channel *chn)
-{
-    u8 stepIdPre;
-    u8 stepIdNew;
-
-    chnStepSwPre(chn);
-    chn->capStep = 0;
-    chn->capCtnu = 0;
-    chn->stepRunTime = 0;
-    chn->stepRunTimeCtnu = 0;
-    chn->stepRunTimeBase = 0;
-    stepIdPre = chn->stepIdTmp;
-    stepIdNew = chn->stepIdTmp + 1;
-    if (stepIdNew < gTmpStepAmt[chn->box->tray->trayIdx])
-    {
-        UpStepInfo *step;
-
-        step = (UpStepInfo *)getChnStepInfo(chn->box->tray->trayIdx, stepIdNew);
-        chn->stepIdTmp = stepIdNew;
-        chn->stepTypeTmp = chn->upStepType = step->stepType;
-        if (trayChkStepNpSame(chn, stepIdPre, chn->stepIdTmp))
-        {
-            chn->chnStateMed = ChnStaStart;
-            boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStart);
-        }
-        else
-        {
-            trayNpChnFree(chn->box->tray, chn);
-            if (Ok == trayNpChnAlloc(chn->box->tray, chn, chn->stepIdTmp))
-            {
-                chn->chnStateMed = ChnStaStart;
-                boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStart);
-            }
-            else
-            {
-                chn->chnStateMed = ChnStaNpWait;
-                chnEnterIdle(chn);
-            }
-        }
-    }
-    else
-    {
-        trayNpChnFree(chn->box->tray, chn);
-        chn->chnStateMed = ChnStaIdle;
-        chnEnterIdle(chn);
-    }
-
-    return;
-}
-
-/*从有效采样的数据中获取通道电源柜数据,以做保护*/
-/*能直接用上传采样做保护是好的,不过托盘采样和通道采样不同,那样保护要两份*/
-/*单独保存可以不用两份保护,不过要多一些原本不必要的内存操作*/
-/*以后调整方向为托盘采样和通道采样相同,这是最好的*/
-void chnSavePowerSmpl(Channel *chn, void *lowSmpl)
-{
-    TrayChnSmpl *smplCri;
-    ChnProtBuf *chnProtBuf;
-
-    chnProtBuf = &chn->chnProtBuf;
-    chnProtBuf->newPowerBeValid = True;
-    if (NULL == chn->cell)
-    {
-        ChnSmplParall *lowParalSmpl;
-
-        lowParalSmpl = (ChnSmplParall *)lowSmpl;
-        chnProtBuf->newCur = lowParalSmpl->current;
-        chnProtBuf->newVolCell = lowParalSmpl->volCell;
-        chnProtBuf->newVolCur = lowParalSmpl->volCur;
-        chnProtBuf->newVolPort = lowParalSmpl->volPort;
-        chn->volInner = lowParalSmpl->volInner;
-        chn->capLow = lowParalSmpl->capacity;
-        chn->stepSubType = lowParalSmpl->stepType & 0x07;
-        chn->lowCause = lowParalSmpl->cause;
-    }
-    else
-    {
-        ChnSmplSeries *lowSeriesSmpl;
-        CellSmplSeriesWoSw *cellSmpl;
-        Cell *cell;
-        Cell *cellCri;
-
-        lowSeriesSmpl = (ChnSmplSeries *)lowSmpl;
-        chnProtBuf->newCur = lowSeriesSmpl->current;
-        chnProtBuf->newVolCell = 0;
-        chnProtBuf->newVolCur = 0;
-        chnProtBuf->newVolPort = lowSeriesSmpl->volPort;
-        chn->volInner = lowSeriesSmpl->volInner;
-        chn->capLow = lowSeriesSmpl->capacity;
-        chn->stepSubType = lowSeriesSmpl->stepType & 0x07;
-        chn->lowCause = lowSeriesSmpl->cause;
-
-        cellSmpl = lowSeriesSmpl->cellSmplWoSw;
-        for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++)
-        {
-            chnProtBuf = &cell->chnProtBuf;
-            chnProtBuf->newPowerBeValid = True;
-            chnProtBuf->newCur = lowSeriesSmpl->current;
-            chnProtBuf->newVolCell = cellSmpl[cell->lowCellIdxInChn].volCell;
-            chnProtBuf->newVolCur = cellSmpl[cell->lowCellIdxInChn].volCur;
-            chnProtBuf->newVolPort = lowSeriesSmpl->volPort;
-        }
-    }
-    return;
-}
-
-/*todo,目前只有并联和极简串联*/
-void chnSaveTraySmpl(Channel *chn, TrayChnSmpl *trayChnSmpl)
-{
-    ChnProtBuf *chnProtBuf;
-
-    chn->smplPres = True;
-    chn->box->tray->smplMgr.smplChnAmt++;
-    chnProtBuf = &chn->chnProtBuf;
-    trayChnSmpl->chnType = ChnTypeMainChn;
-    trayChnSmpl->chnUpState = chnStaMapMed2Up(chn);
-    trayChnSmpl->stepId = chn->stepIdTmp;
-    trayChnSmpl->stepType = chn->stepTypeTmp;
-    trayChnSmpl->stepSubType = chn->stepSubType;
-    trayChnSmpl->inLoop = True;
-    trayChnSmpl->causeCode = chn->lowCause;
-    trayChnSmpl->stepRunTime = chn->stepRunTime + chn->stepRunTimeCtnu;
-    trayChnSmpl->volCell = chnProtBuf->newVolCell;
-    trayChnSmpl->volCur = chnProtBuf->newVolCur;
-    trayChnSmpl->volPort = chnProtBuf->newVolPort;
-    trayChnSmpl->volInner = chn->volInner;
-    trayChnSmpl->current = chnProtBuf->newCur;
-    trayChnSmpl->capacity = chn->capStep;
-    if (NULL != chn->cell)
-    {
-        Cell *cell;
-        Cell *cellCri;
-        ChnProtBuf *cellProtBuf;
-        
-        trayChnSmpl++;
-        for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++,trayChnSmpl++)
-        {
-            cellProtBuf = &cell->chnProtBuf;
-            trayChnSmpl->chnType = ChnTypeSeriesCell;
-            trayChnSmpl->chnUpState = chnStaMapMed2Up(chn);
-            trayChnSmpl->stepId = chn->stepIdTmp;
-            trayChnSmpl->stepType = chn->stepTypeTmp;
-            trayChnSmpl->stepSubType = chn->stepSubType;
-            trayChnSmpl->inLoop = True;
-            trayChnSmpl->causeCode = chn->lowCause;
-            trayChnSmpl->stepRunTime = chn->stepRunTime + chn->stepRunTimeCtnu;
-            trayChnSmpl->volCell = cellProtBuf->newVolCell;
-            trayChnSmpl->volCur = cellProtBuf->newVolCur;
-            trayChnSmpl->volPort = cellProtBuf->newVolPort;
-            trayChnSmpl->volInner = chn->volInner;
-            trayChnSmpl->current = cellProtBuf->newCur;
-            trayChnSmpl->capacity = chn->capStep;
-        }
-    }
-
-    return;
-}
-
-u8eUpChnState chnStaMapMed2Up(Channel *chn)
-{
-    return gDevMgr->chnStaMapMed2Up[chn->chnStateMed];
-}
-
-void chnStopByProt(Channel *chn, b8 beTrayProt)
-{
-    Cell *cell;
-    Cell *cellCri;
-    TraySmpl *traySmpl;
-    TrayChnSmpl *trayChnSmpl;
-    
-    traySmpl = ((TraySmplRcd *)chn->box->tray->smplMgr.smplBufAddr)->traySmpl;
-    trayChnSmpl = &traySmpl->chnSmpl[chn->genIdxInTray];
-    if (ChnStaRun == chn->chnStateMed) /*正在运行就截止容量*/
-    {
-        u8eChgType chgType;
-
-        chgType = getChgType(chn, chn->stepIdTmp);
-        if (ChgTypeChg == chgType)
-        {
-            chn->capFlowCrnt += chn->capStep;
-            chn->capChgTtl += chn->capStep;
-        }
-        else if (ChgTypeDisChg == chgType)
-        {
-            chn->capFlowCrnt += chn->capStep;
-            chn->capDisChgTtl += chn->capStep;
-        }
-    }
-
-    if (!chn->smplPres)  /*本轮无采样就用老数据*/
-    {
-        chnSaveTraySmpl(chn, trayChnSmpl);
-    }
-
-    /*确定是否要下发停止和修改状态*/
-    if (ChnStaRun==chn->chnStateMed || ChnStaStart==chn->chnStateMed)
-    {
-        chn->chnStateMed = gTmpStepProtState[chn->box->tray->trayIdx]==ChnStaPause||beTrayProt ? ChnStaMedPauseWait : ChnStaMedStopWait;
-        boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStop);
-    }
-    else if (ChnStaLowProtEnd==chn->chnStateMed || ChnStaLowNmlEnd==chn->chnStateMed)
-    {
-        chn->chnStateMed = gTmpStepProtState[chn->box->tray->trayIdx]==ChnStaPause||beTrayProt ? ChnStaMedPauseWait : ChnStaMedStopWait;
-    }
-    else if (ChnStaNpWait == chn->chnStateMed
-        || ChnStaUpStopReq==chn->chnStateMed || ChnStaUpPauseReq==chn->chnStateMed
-        || ChnStaUpStopStartReq==chn->chnStateMed || ChnStaUpPauseStartReq==chn->chnStateMed)
-    {
-        chn->chnStateMed = gTmpStepProtState[chn->box->tray->trayIdx]==ChnStaPause||beTrayProt ? ChnStaPause : ChnStaStop;
-    }
-
-    /*修改采样异常码和状态*/
-    CcChkModify(trayChnSmpl->causeCode, chn->chnProtBuf.newCauseCode);
-    if (ChnUpStateStart==trayChnSmpl->chnUpState || ChnUpStateNp==trayChnSmpl->chnUpState)
-    {
-        trayChnSmpl->chnUpState = ChnUpStateRun;
-    }
-    if (NULL != chn->cell)
-    {
-        trayChnSmpl++;
-        for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++,trayChnSmpl++)
-        {
-            CcChkModify(cell->chnProtBuf.newCauseCode, chn->chnProtBuf.newCauseCode);
-            CcChkModify(trayChnSmpl->causeCode, cell->chnProtBuf.newCauseCode);
-            if (ChnUpStateStart==trayChnSmpl->chnUpState || ChnUpStateNp==trayChnSmpl->chnUpState)
-            {
-                trayChnSmpl->chnUpState = ChnUpStateRun;
-            }
-        }
-    }
-
-    trayNpChnFree(chn->box->tray, chn);
-    chn->capStep = 0;
-    chn->capCtnu = 0;
-    chn->stepRunTime = 0;
-    chn->stepRunTimeCtnu = 0;
-    return;
-}
-
-void _____begin_chn_state_machine_____(){}
-
-/*todo,三个闲时的状态检查*/
-void chnStaMapIdle(Channel *chn, void *lowData)
-{
-    return;
-}
-
-void chnStaMapStop(Channel *chn, void *lowData)
-{
-    return;
-}
-
-void chnStaMapPause(Channel *chn, void *lowData)
-{
-    return;
-}
-
-void chnStaMapNpWait(Channel *chn, void *lowData)
-{
-    return;
-}
-
-/*已下发启动*/
-void chnStaMapStart(Channel *chn, void *lowData)
-{
-    ChnSmplParall *lowSmpl;
-
-    lowSmpl = (ChnSmplParall *)lowData;
-    if (LowChnStateRun==lowSmpl->chnLowState && chn->stepIdTmp==lowSmpl->stepId
-        && chn->stepTypeTmp == lowSmpl->stepType>>3)
-    {
-        u8eChgType chgType;
-
-        chn->chnStateMed = ChnStaRun;
-        chn->stepRunTime = 0;
-        chn->stepRunTimeBase = lowSmpl->timeStamp;
-        chn->capStep = chn->capCtnu + chn->capLow;
-        chgType = getChgType(chn, chn->stepIdTmp);
-        if (ChgTypeCri == chn->chgTypePre)
-        {
-            chn->chgTypePre = chgType;
-        }
-        else if (ChgTypeCri!=chgType && chn->chgTypePre!=chgType)
-        {
-            chn->chgTypePre = chgType;
-            chn->capFlowCrnt = 0;
-        }
-
-        if (0 != lowSmpl->cause)
-        {
-            if (ChgTypeChg == chgType)
-            {
-                chn->capFlowCrnt += chn->capStep;
-                chn->capChgTtl += chn->capStep;
-            }
-            else if (ChgTypeDisChg == chgType)
-            {
-                chn->capFlowCrnt += chn->capStep;
-                chn->capDisChgTtl += chn->capStep;
-            }
-
-            if (lowSmpl->cause < CcFlowPauseEnd) /*上来就截止*/
-            {
-                chn->chnStateMed = ChnStaLowNmlEnd;
-            }
-            else if (lowSmpl->cause > CcFlowStopEnd)  /**/
-            {
-                chn->chnStateMed = ChnStaLowProtEnd;
-            }
-        }
-    }
-    else
-    {
-        chn->dynStaCnt++;
-        if (chn->dynStaCnt > LowDynStaCntMax)
-        {
-            setChnAbnml(chn, Cc1LowStartExpr);
-        }
-    }
-    return;
-}
-
-/*运行态防呆,比如下位机超时不截止,todo*/
-void chnStaMapRun(Channel *chn, void *lowData)
-{
-    ChnSmplParall *lowSmpl;
-
-    lowSmpl = (ChnSmplParall *)lowData;
-    if (LowChnStateRun!=lowSmpl->chnLowState || chn->stepIdTmp!=lowSmpl->stepId)
-    {
-        setChnAbnml(chn, Cc1LowAbnmlEnd);
-        return;
-    }
-
-    chnRunTimeUpd(chn, lowSmpl->timeStamp);
-    chn->capStep = chn->capCtnu + chn->capLow;
-    if (0 != lowSmpl->cause)
-    {
-        u8eChgType chgType;
-
-        chgType = getChgType(chn, chn->stepIdTmp);
-        if (ChgTypeChg == chgType)
-        {
-            chn->capFlowCrnt += lowSmpl->capacity;
-            chn->capChgTtl += lowSmpl->capacity;
-        }
-        else if (ChgTypeDisChg == chgType)
-        {
-            chn->capFlowCrnt += lowSmpl->capacity;
-            chn->capDisChgTtl += lowSmpl->capacity;
-        }
-
-        if (lowSmpl->cause < CcFlowPauseEnd)
-        {
-            chn->chnStateMed = ChnStaLowNmlEnd;
-        }
-        else if (lowSmpl->cause > CcFlowStopEnd)  /**/
-        {
-            chn->chnStateMed = ChnStaLowProtEnd;
-        }
-    }
-    return;
-}
-
-/*上位机触发停止,停止已下发,需等到下位机最后的数据*/
-void chnStaMapUpStopReq(Channel *chn, void *lowData)
-{
-    ChnSmplParall *lowSmpl;
-
-    lowSmpl = (ChnSmplParall *)lowData;
-    if (LowChnStateRun == lowSmpl->chnLowState)
-    {
-        if (0 == chn->stepRunTimeBase)
-        {
-            u8eChgType chgType;
-
-            chn->stepRunTime = 0;
-            chn->stepRunTimeBase = lowSmpl->timeStamp;
-            chn->capStep = chn->capCtnu + chn->capLow;
-            chgType = getChgType(chn, chn->stepIdTmp);
-            if (ChgTypeCri == chn->chgTypePre)
-            {
-                chn->chgTypePre = chgType;
-            }
-            else if (ChgTypeCri!=chgType && chn->chgTypePre!=chgType)
-            {
-                chn->chgTypePre = chgType;
-                chn->capFlowCrnt = 0;
-            }
-        }
-        else
-        {
-            chnRunTimeUpd(chn, lowSmpl->timeStamp);
-            chn->capStep = chn->capCtnu + chn->capLow;
-        }
-
-        if (0 != lowSmpl->cause)
-        {
-            u8eChgType chgType;
-
-            chgType = getChgType(chn, chn->stepIdTmp);
-            if (ChgTypeChg == chgType)
-            {
-                chn->capFlowCrnt += lowSmpl->capacity;
-                chn->capChgTtl += lowSmpl->capacity;
-            }
-            else if (ChgTypeDisChg == chgType)
-            {
-                chn->capFlowCrnt += lowSmpl->capacity;
-                chn->capDisChgTtl += lowSmpl->capacity;
-            }
-            chn->chnStateMed = ChnStaUpStopEnd;
-        }
-        else
-        {
-            chn->dynStaCnt++;
-            if (chn->dynStaCnt > LowDynStaCntMax)
-            {
-                setChnAbnml(chn, Cc1LowEndExpr);
-            }
-        }
-    }
-    else
-    {
-        chn->dynStaCnt++;
-        if (ChnStaUpStopReq == chn->chnStateMed)
-        {
-            setChnAbnml(chn, Cc1LowAbnmlEnd);
-        }
-        else if (ChnStaUpStopStartReq == chn->chnStateMed)
-        {
-            if (chn->dynStaCnt > LowDynStaCntMax)
-            {
-                setChnAbnml(chn, Cc1LowEndExpr);
-            }
-        }
-        else  /*ChnStaUpStopNpReq*/
-        {
-            chn->lowCause = CcFlowStopEnd;
-            chn->chnStateMed = ChnStaUpStopEnd;
-        }
-    }
-    return;
-}
-
-/*上位机触发暂停,停止已下发,需等到下位机最后的数据*/
-void chnStaMapUpPauseReq(Channel *chn, void *lowData)
-{
-    ChnSmplParall *lowSmpl;
-
-    lowSmpl = (ChnSmplParall *)lowData;
-    if (LowChnStateRun == lowSmpl->chnLowState)
-    {
-        if (0 == chn->stepRunTimeBase)
-        {
-            u8eChgType chgType;
-
-            chn->stepRunTime = 0;
-            chn->stepRunTimeBase = lowSmpl->timeStamp;
-            chn->capStep = chn->capCtnu + chn->capLow;
-            chgType = getChgType(chn, chn->stepIdTmp);
-            if (ChgTypeCri == chn->chgTypePre)
-            {
-                chn->chgTypePre = chgType;
-            }
-            else if (ChgTypeCri!=chgType && chn->chgTypePre!=chgType)
-            {
-                chn->chgTypePre = chgType;
-                chn->capFlowCrnt = 0;
-            }
-        }
-        else
-        {
-            chnRunTimeUpd(chn, lowSmpl->timeStamp);
-            chn->capStep = chn->capCtnu + chn->capLow;
-        }
-
-        if (0 != lowSmpl->cause)
-        {
-            u8eChgType chgType;
-
-            chgType = getChgType(chn, chn->stepIdTmp);
-            if (ChgTypeChg == chgType)
-            {
-                chn->capFlowCrnt += lowSmpl->capacity;
-                chn->capChgTtl += lowSmpl->capacity;
-            }
-            else if (ChgTypeDisChg == chgType)
-            {
-                chn->capFlowCrnt += lowSmpl->capacity;
-                chn->capDisChgTtl += lowSmpl->capacity;
-            }
-            if (CcFlowStopEnd == lowSmpl->cause)
-            {
-                chn->lowCause = CcFlowPauseEnd;
-            }
-            chn->chnStateMed = ChnStaUpPauseEnd;
-        }
-        else
-        {
-            chn->dynStaCnt++;
-            if (chn->dynStaCnt > LowDynStaCntMax)
-            {
-                setChnAbnml(chn, Cc1LowEndExpr);
-            }
-        }
-    }
-    else
-    {
-        chn->dynStaCnt++;
-        if (ChnStaUpPauseReq == chn->chnStateMed)
-        {
-            setChnAbnml(chn, Cc1LowAbnmlEnd);
-        }
-        else if (ChnStaUpPauseStartReq == chn->chnStateMed)
-        {
-            if (chn->dynStaCnt > LowDynStaCntMax)
-            {
-                setChnAbnml(chn, Cc1LowEndExpr);
-            }
-        }
-        else  /*ChnStaUpPauseNpReq*/
-        {
-            chn->lowCause = CcFlowPauseEnd;
-            chn->chnStateMed = ChnStaUpPauseEnd;
-        }
-    }
-    return;
-}
-
-/*上位机触发停止已完成且已经收到下位机的截止数据并上传,等下位机空闲*/
-void chnStaMapUpStopEnd(Channel *chn, void *lowData)
-{
-    ChnSmplParall *lowSmpl;
-
-    lowSmpl = (ChnSmplParall *)lowData;
-    if (LowChnStateRun == lowSmpl->chnLowState)
-    {
-        chn->dynStaCnt++;
-        chn->chnStateMed = ChnStaMedIdleWait;
-        chn->stepTypeTmp = StepTypeNull;
-        chn->stepIdTmp = StepIdNull;
-    }
-    else
-    {
-        chn->chnStateMed = ChnStaIdle;
-        trayNpChnFree(chn->box->tray, chn);
-        chnEnterIdle(chn);
-    }
-    return;
-}
-
-/*上位机触发暂停已完成且已经收到下位机的截止数据并上传,只等下位机空闲*/
-void chnStaMapUpPauseEnd(Channel *chn, void *lowData)
-{
-    ChnSmplParall *lowSmpl;
-
-    lowSmpl = (ChnSmplParall *)lowData;
-    if (LowChnStateRun == lowSmpl->chnLowState)
-    {
-        chn->dynStaCnt++;
-        chn->chnStateMed = ChnStaMedPauseWait;
-        chn->stepTypeTmp = StepTypeNull;
-        chn->stepIdTmp = StepIdNull;
-    }
-    else
-    {
-        chn->chnStateMed = ChnStaPause;
-        trayNpChnFree(chn->box->tray, chn);
-        chnEnterIdle(chn);
-    }
-    return;
-}
-
-/*下位机保护,且截止数据完毕,只等下位机空闲*/
-void chnStaMapLowProtEnd(Channel *chn, void *lowData)
-{
-    ChnSmplParall *lowSmpl;
-
-    lowSmpl = (ChnSmplParall *)lowData;
-    if (LowChnStateRun==lowSmpl->chnLowState || LowChnStateStart==lowSmpl->chnLowState)
-    {
-        chn->stepTypeTmp = StepTypeNull;
-        chn->stepIdTmp = StepIdNull;
-        chn->chnStateMed = gTmpStepProtState[chn->box->tray->trayIdx]==ChnStaPause ? ChnStaMedPauseWait : ChnStaMedStopWait;
-        chn->dynStaCnt++;
-    }
-    else
-    {
-        chn->chnStateMed = gTmpStepProtState[chn->box->tray->trayIdx];
-        trayNpChnFree(chn->box->tray, chn);
-        chnEnterIdle(chn);
-    }
-    return;
-}
-
-void chnStaMapStopWait(Channel *chn, void *lowData)
-{
-    ChnSmplParall *lowSmpl;
-
-    lowSmpl = (ChnSmplParall *)lowData;
-    if (LowChnStateRun==lowSmpl->chnLowState || LowChnStateStart==lowSmpl->chnLowState)
-    {
-        chn->dynStaCnt++;
-        if (chn->dynStaCnt > LowDynStaCntMax)
-        {
-            chn->chnStateMed = ChnStaStop;
-            chnEnterIdle(chn);
-            setChnAbnml(chn, Cc1LowEndExpr);
-        }
-    }
-    else
-    {
-        chn->chnStateMed = ChnStaStop;
-        trayNpChnFree(chn->box->tray, chn);
-        chnEnterIdle(chn);
-    }
-    return;
-}
-
-/*上位机暂停,中位机启动态且停止已下发,需等下位机空闲,或中位机等待负压*/
-/*注意,下发停止时,下位机可能在运行态或启动态*/
-void chnStaMapPauseWait(Channel *chn, void *lowData)
-{
-    ChnSmplParall *lowSmpl;
-
-    lowSmpl = (ChnSmplParall *)lowData;
-    if (LowChnStateRun==lowSmpl->chnLowState || LowChnStateStart==lowSmpl->chnLowState)
-    {
-        chn->dynStaCnt++;
-        if (chn->dynStaCnt > LowDynStaCntMax)
-        {
-            chn->chnStateMed = ChnStaPause;
-            chnEnterIdle(chn);
-            setChnAbnml(chn, Cc1LowEndExpr);
-        }
-    }
-    else
-    {
-        chn->chnStateMed = ChnStaPause;
-        trayNpChnFree(chn->box->tray, chn);
-        chnEnterIdle(chn);
-    }
-    return;
-}
-void chnStaMapIdleWait(Channel *chn, void *lowData)
-{
-    ChnSmplParall *lowSmpl;
-
-    lowSmpl = (ChnSmplParall *)lowData;
-    if (LowChnStateRun==lowSmpl->chnLowState)
-    {
-        chn->dynStaCnt++;
-        if (chn->dynStaCnt > LowDynStaCntMax)
-        {
-            chn->chnStateMed = ChnStaIdle;
-            chnEnterIdle(chn);
-            setChnAbnml(chn, Cc1LowEndExpr);
-        }
-    }
-    else
-    {
-        chn->chnStateMed = ChnStaIdle;
-        trayNpChnFree(chn->box->tray, chn);
-        chnEnterIdle(chn);
-    }
-    return;
-}
-
-void _____endof_chn_state_machine_____(){}
-
-void chnLowSmplProc(Channel *chn, void *upSmplBuf, void *lowSmpl)
-{
-    TrayChnSmpl *trayChnSmpl;
-
-    trayChnSmpl = (TrayChnSmpl *)upSmplBuf;
-    chnSavePowerSmpl(chn, lowSmpl);
-    gChnMgr->chnStaMap[chn->chnStateMed](chn, lowSmpl);
-    chnSaveTraySmpl(chn, trayChnSmpl);
-    if (chn->box->tray->protEnable)
-    {
-        chnProtWork(chn);
-    }
-    if (ChnStaLowNmlEnd == chn->chnStateMed)
-    {
-        chnStepLowNmlEnd(chn);
-    }
-    return;
-}
-
-void ChnInit()
-{
-    ChnMgr *mgr;
-    u16 idx;
-
-    gChnMgr = mgr = sysMemAlloc(sizeof(ChnMgr));
-    for (idx=0; idx<TimerIdCri; idx++)
-    {
-        mgr->chnStaMap[idx] = (ChnStaMap)chnProcIgnore;
-    }
-    mgr->chnStaMap[ChnStaIdle] = chnStaMapIdle;
-    mgr->chnStaMap[ChnStaStop] = chnStaMapStop;
-    mgr->chnStaMap[ChnStaPause] = chnStaMapPause;
-    mgr->chnStaMap[ChnStaNpWait] = chnStaMapNpWait;
-    mgr->chnStaMap[ChnStaStart] = chnStaMapStart;
-    mgr->chnStaMap[ChnStaRun] = chnStaMapRun;
-    mgr->chnStaMap[ChnStaUpStopReq] = chnStaMapUpStopReq;
-    mgr->chnStaMap[ChnStaUpPauseReq] = chnStaMapUpPauseReq;
-    mgr->chnStaMap[ChnStaUpStopEnd] = chnStaMapUpStopEnd;
-    mgr->chnStaMap[ChnStaUpPauseEnd] = chnStaMapUpPauseEnd;
-    mgr->chnStaMap[ChnStaUpStopStartReq] = chnStaMapUpStopReq;
-    mgr->chnStaMap[ChnStaUpPauseStartReq] = chnStaMapUpPauseReq;
-    mgr->chnStaMap[ChnStaUpStopNpReq] = chnStaMapUpStopReq;
-    mgr->chnStaMap[ChnStaUpPauseNpReq] = chnStaMapUpPauseReq;
-    mgr->chnStaMap[ChnStaLowProtEnd] = chnStaMapLowProtEnd;
-    mgr->chnStaMap[ChnStaMedStopWait] = chnStaMapStopWait;
-    mgr->chnStaMap[ChnStaMedPauseWait] = chnStaMapPauseWait;
-    mgr->chnStaMap[ChnStaMedIdleWait] = chnStaMapIdleWait;
-
-    return;
-}
-
-#endif
-
-
+#include <stdio.h>#include <string.h>#include <stdlib.h>#include "basic.h"#if TRAY_ENABLE#include "define.h"#include "enum.h"#include "type.h"#include "cause.h"#include "func.h"#include "timer.h"#include "log.h"#include "entry.h"#include "flow.h"#include "box.h"#include "host.h"#include "channel.h"#include "protect.h"#include "tray.h"ChnMgr *gChnMgr;void chnProcIgnore(){return;}void chnProtBufInit(ChnProtBuf *chnProtBuf){chnProtBuf->cellTmprPre.tmprBeValid = False;chnProtBuf->cellTmprCrnt.tmprBeValid = False;chnProtBuf->cellTmprCrnt.tmprInvalidCnt = 0;chnProtBuf->newPowerBeValid = False;chnProtBuf->prePowerBeValid = False;chnProtBuf->newCauseCode = CcNone;chnProtBuf->mixSubHpnBitmap = 0;chnProtBuf->idleProtEna = False;return;}/*判断电芯是否在空闲*/b8 chnBeInIdle(Channel *chn, ChnProtBuf *protBuf){if (NULL == chn->bypsSeriesInd){if (chn->chnStateMed > ChnStaNpWait){return False;}}else{BypsSeriesInd *seriesInd;Cell *cell;seriesInd = chn->bypsSeriesInd;cell = Container(Cell, chnProtBuf, protBuf);if (LowBypsSwOut != cell->swState){if (!BitIsSet(chn->bypsSeriesInd->idleCutInCell, cell->cellIdxInChn)){return False;}}}return True;}/*判断电芯是否在工步运行态*/b8 chnBeInRun(Channel *chn, ChnProtBuf *protBuf){if (ChnStaRun!=chn->chnStateMed && ChnStaLowNmlEnd!=chn->chnStateMed){return False;}if (NULL != chn->bypsSeriesInd){Cell *cell;cell = Container(Cell, chnProtBuf, protBuf);if (LowBypsSwOut == cell->swState){return False;}}return True;}void chnRunTimeUpd(Channel *chn, u32 timeStampMs){if (timeStampMs < chn->stepRunTimeBase){chn->stepRunTime = (u32)0xffffffff - chn->stepRunTimeBase + 1 + timeStampMs;}else{chn->stepRunTime = timeStampMs - chn->stepRunTimeBase;}return;}/*旁路串联时未必真正进入空闲,需配合其它信息判断空闲*/void cellEnterIdle(Cell *cell){cell->chnProtBuf.idleTimeStampSec = sysTimeSecGet();cell->chnProtBuf.idleVolBaseValid = False;cell->chnProtBuf.flowIdleVolIntvlRiseBaseValid = False;return;}void chnEnterIdle(Channel *chn){Cell *cell;Cell *cellCri;chn->capStep = 0;chn->capCtnu = 0;chn->stepRunTime = 0;chn->stepRunTimeCtnu = 0;if (ChnStaIdle == chn->chnStateMed){chn->chnStepType = StepTypeNull;chn->chnStepId = StepIdNull;}chn->chnProtBuf.idleTimeStampSec = sysTimeSecGet();chn->chnProtBuf.idleVolBaseValid = False;chn->chnProtBuf.flowIdleVolIntvlRiseBaseValid = False;if (NULL!=chn->cell && NULL==chn->bypsSeriesInd)  /*旁路串联不在这里*/{for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++){cellEnterIdle(cell);}}return;}/*时间戳是下位机绝对时间*/void chnEnterRun(Channel *chn, u32 timeStamp){u8eChgType chgType;chn->chnStateMed = ChnStaRun;chn->stepRunTime = 0;chn->stepRunTimeBase = timeStamp;chn->capStep = chn->capCtnu + chn->capLow;chgType = stepType2ChgType(chn->crntStepNode->stepObj->stepType);if (ChgTypeCri == chn->chgTypePre){chn->chgTypePre = chgType;}else if (ChgTypeCri!=chgType && chn->chgTypePre!=chgType){chn->chgTypePre = chgType;chn->capFlowCrnt = 0;}return;}void chnStepSwPre(Channel *chn){Cell *cell;Cell *cellCri;ChnProtBuf *chnProtBuf;chnProtBuf = &chn->chnProtBuf;chnProtBuf->idleVolCtnuSmlRiseCnt = 0;chnProtBuf->idleVolCtnuSmlDownCnt = 0;chnProtBuf->quietVolDownBaseValid = False;chnProtBuf->cccVolDownAbnmValid = False;chnProtBuf->ccVolIntvlFluctBaseValid = False;chnProtBuf->cccVolRiseCtnuCnt = False;chnProtBuf->cccVolDownCtnuCnt = False;chnProtBuf->ccdVolRiseAbnmValid = False;chnProtBuf->cvcCurRiseAbnmValid = False;chnProtBuf->flowIdleVolIntvlRiseBaseValid = False;chnProtBuf->flowCcdcVolIntvlFluctBaseValid = False;chnProtBuf->ccdcVolBigDownValid = False;chnProtBuf->idleVolBaseValid = False;if (NULL != chn->cell){for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++){chnProtBuf = &cell->chnProtBuf;chnProtBuf->idleVolCtnuSmlRiseCnt = 0;chnProtBuf->idleVolCtnuSmlDownCnt = 0;chnProtBuf->quietVolDownBaseValid = False;chnProtBuf->cccVolDownAbnmValid = False;chnProtBuf->ccVolIntvlFluctBaseValid = False;chnProtBuf->cccVolRiseCtnuCnt = False;chnProtBuf->cccVolDownCtnuCnt = False;chnProtBuf->ccdVolRiseAbnmValid = False;chnProtBuf->cvcCurRiseAbnmValid = False;chnProtBuf->flowIdleVolIntvlRiseBaseValid = False;chnProtBuf->flowCcdcVolIntvlFluctBaseValid = False;chnProtBuf->ccdcVolBigDownValid = False;chnProtBuf->idleVolBaseValid = False;}}return;}u8eChgType stepType2ChgType(u8eStepType stepType){if (StepTypeCCC==stepType || StepTypeCCCVC==stepType || StepTypeCVC==stepType){return ChgTypeChg;}if (StepTypeCCD==stepType || StepTypeCCCVD==stepType || StepTypeCVD==stepType){return ChgTypeDisChg;}return ChgTypeCri;}void chnEndCapCalc(Channel *chn){u8eChgType chgType;chgType = stepType2ChgType(chn->crntStepNode->stepObj->stepType);if (ChgTypeChg == chgType){chn->capFlowCrnt += chn->capStep;chn->capChgTtl += chn->capStep;}else if (ChgTypeDisChg == chgType){chn->capFlowCrnt += chn->capStep;chn->capDisChgTtl += chn->capStep;}}/*下位机正常截止,这个是执行保护逻辑之后的逻辑*/void chnStepLowNmlEnd(Channel *chn){StepNode *stepNodeNxt;chnStepSwPre(chn);chn->capStep = 0;chn->capCtnu = 0;chn->stepRunTime = 0;chn->stepRunTimeCtnu = 0;stepNodeNxt = getNxtStep(chn, chn->crntStepNode, True);if (NULL == stepNodeNxt){goto flowEnd;}if (NULL != chn->bypsSeriesInd) /*旁路串联的电芯都保护也流程结束*/{BypsSeriesInd *seriesInd;seriesInd = chn->bypsSeriesInd;if (seriesInd->startCell == (seriesInd->pausedCell|seriesInd->stopedCell)){seriesInd->nmlEndCell = seriesInd->runCell = 0;goto flowEnd;}else{/*todo,,这里加上,,waitCell,,是否参与进来*/seriesInd->runCell |= seriesInd->nmlEndCell;seriesInd->nmlEndCell = seriesInd->endingCell = 0;}}chn->crntStepNode = stepNodeNxt;chn->chnStepId = chn->crntStepNode->stepId;chn->chnStepType = chn->upStepType = stepNodeNxt->stepObj->stepType;if (0 == getStepEndTime(stepNodeNxt->stepObj)){/*如果工步截止时间为零,需要跳下个工步,并生成一条数据*//*不能直接发下个工步,等下条采样生成工步数据,再发下个工步*/chn->chnStateMed = ChnStaMedEnd;return;}if (Ok == trayNpChnReAlloc(chn->box->tray, chn)){chn->chnStateMed = ChnStaStart;boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStart);}else{chn->chnStateMed = ChnStaNpWait;chnEnterIdle(chn);}return;flowEnd:trayNpChnFree(chn->box->tray, chn);chn->chnStateMed = ChnStaIdle;chnEnterIdle(chn);if (NULL != chn->bypsSeriesInd) /*旁路串联要求下停止*/{chn->bypsSeriesInd->stopingCell = chn->bypsSeriesInd->startCell;boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStop);}return;}/*从有效采样的数据中获取通道电源柜数据,以做保护*//*能直接用上传采样做保护是好的,不过托盘采样和通道采样不同,那样保护要两份*//*单独保存可以不用两份保护,不过要多一些原本不必要的内存操作*//*以后调整方向为托盘采样和通道采样相同,这是最好的*/void chnSavePowerSmpl(Channel *chn, void *lowSmpl){TrayChnSmpl *smplCri;ChnProtBuf *chnProtBuf;chnProtBuf = &chn->chnProtBuf;chnProtBuf->newPowerBeValid = True;if (NULL == chn->cell){ChnSmplParall *lowParalSmpl;lowParalSmpl = (ChnSmplParall *)lowSmpl;chnProtBuf->newCur = lowParalSmpl->current;chnProtBuf->newVolCell = lowParalSmpl->volCell;chnProtBuf->newVolCur = lowParalSmpl->volCur;chnProtBuf->newVolPort = lowParalSmpl->volPort;chn->volInner = lowParalSmpl->volInner;chn->capLow = lowParalSmpl->capacity;chn->stepSubType = lowParalSmpl->stepType & 0x07;chn->lowCause = lowParalSmpl->cause;chn->tmprPower = (u16)lowParalSmpl->tempPower;chn->volBus = lowParalSmpl->volBus;}else{ChnSmplSeries *lowSeriesSmpl;Cell *cell;Cell *cellCri;lowSeriesSmpl = (ChnSmplSeries *)lowSmpl;chnProtBuf->newCur = lowSeriesSmpl->current;chnProtBuf->newVolCell = 0;chnProtBuf->newVolCur = 0;chnProtBuf->newVolPort = lowSeriesSmpl->volPort;chn->volInner = lowSeriesSmpl->volInner;chn->capLow = lowSeriesSmpl->capacity;chn->stepSubType = lowSeriesSmpl->stepType & 0x07;chn->lowCause = lowSeriesSmpl->cause;chn->tmprPower = (u16)lowSeriesSmpl->tempPower;chn->volBus = lowSeriesSmpl->volBus;if (NULL == chn->bypsSeriesInd){CellSmplSeriesWoSw *cellSmplWoSw;cellSmplWoSw = lowSeriesSmpl->cellSmplWoSw;for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++){chnProtBuf = &cell->chnProtBuf;chnProtBuf->newPowerBeValid = True;chnProtBuf->newCur = lowSeriesSmpl->current;chnProtBuf->newVolCell = cellSmplWoSw[cell->lowCellIdxInChn].volCell;chnProtBuf->newVolCur = cellSmplWoSw[cell->lowCellIdxInChn].volCur;chnProtBuf->newVolPort = lowSeriesSmpl->volPort;}}else{CellSmplSeriesWiSw *cellSmplWiSw;for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++){chnProtBuf = &cell->chnProtBuf;cellSmplWiSw = &lowSeriesSmpl->cellSmplWiSw[cell->lowCellIdxInChn];cell->cellCause = cellSmplWiSw->cause;if (LowBypsSwOut!=cell->swState && LowBypsSwOut==cellSmplWiSw->swState){if (!BitIsSet(chn->bypsSeriesInd->idleCutInCell, cell->cellIdxInChn)){cellEnterIdle(cell);  /*切入变为切出*/}}cell->swState = cellSmplWiSw->swState;chnProtBuf->newPowerBeValid = True;chnProtBuf->newCur = LowBypsSwOut==cell->swState ? 0 : lowSeriesSmpl->current;chnProtBuf->newVolCell = cellSmplWiSw->volCell;chnProtBuf->newVolCur = cellSmplWiSw->volCur;chnProtBuf->newVolPort = lowSeriesSmpl->volPort;}}}return;}void chnSaveTraySmpl(Channel *chn, TrayChnSmpl *trayChnSmpl){ChnProtBuf *chnProtBuf;chn->smplPres = True;chn->box->tray->smplMgr.smplChnAmt++;chnProtBuf = &chn->chnProtBuf;trayChnSmpl->chnType = ChnTypeMainChn;trayChnSmpl->chnUpState = chnStaMapMed2Up(chn);trayChnSmpl->stepId = chn->chnStepId;trayChnSmpl->stepType = chn->chnStepType;trayChnSmpl->stepSubType = chn->stepSubType;trayChnSmpl->inLoop = True;trayChnSmpl->causeCode = chn->lowCause;trayChnSmpl->stepRunTime = chn->stepRunTime + chn->stepRunTimeCtnu;trayChnSmpl->volCell = chnProtBuf->newVolCell;trayChnSmpl->volCur = chnProtBuf->newVolCur;trayChnSmpl->volPort = chnProtBuf->newVolPort;trayChnSmpl->volInner = chn->volInner;trayChnSmpl->current = chnProtBuf->newCur;trayChnSmpl->capacity = chn->capStep;trayChnSmpl->tmprPower = chn->tmprPower;trayChnSmpl->volBus = chn->volBus;if (NULL != chn->cell){Cell *cell;Cell *cellCri;ChnProtBuf *cellProtBuf;trayChnSmpl++;if (NULL == chn->bypsSeriesInd){for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++,trayChnSmpl++){cellProtBuf = &cell->chnProtBuf;trayChnSmpl->chnType = ChnTypeSeriesCell;trayChnSmpl->chnUpState = chnStaMapMed2Up(chn);trayChnSmpl->stepId = chn->chnStepId;trayChnSmpl->stepType = chn->chnStepType;trayChnSmpl->stepSubType = chn->stepSubType;trayChnSmpl->inLoop = True;trayChnSmpl->causeCode = chn->lowCause;trayChnSmpl->stepRunTime = chn->stepRunTime + chn->stepRunTimeCtnu;trayChnSmpl->volCell = cellProtBuf->newVolCell;trayChnSmpl->volCur = cellProtBuf->newVolCur;trayChnSmpl->volPort = cellProtBuf->newVolPort;trayChnSmpl->volInner = chn->volInner;trayChnSmpl->current = cellProtBuf->newCur;trayChnSmpl->capacity = chn->capStep;trayChnSmpl->tmprPower = chn->tmprPower;trayChnSmpl->volBus = chn->volBus;}}else{BypsSeriesInd *seriesInd;seriesInd = chn->bypsSeriesInd;for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++,trayChnSmpl++){cellProtBuf = &cell->chnProtBuf;trayChnSmpl->chnType = ChnTypeSeriesCell;trayChnSmpl->inLoop = cell->swState;/*todo,以下位机数据为依据不合理,应改为以自身逻辑为依据*/if (LowBypsSwOut == cell->swState){if (ChnStaStart==chn->chnStateMed && 0!=cell->cellCause && cell->cellCause<CcFlowPauseEnd){/*旁路串联的直接截止有点特殊:主通道启动态,电芯正常截止*//*关联的状态机处理在chnLowSmplProc函数*/trayChnSmpl->chnUpState = ChnUpStateRun;trayChnSmpl->stepId = chn->chnStepId;trayChnSmpl->stepType = chn->chnStepType;/*trayChnSmpl->inLoop = LowBypsSwCc;*/  /*todo,,若上位机需要*/BitClr(seriesInd->runCell, cell->cellIdxInChn);BitSet(seriesInd->nmlEndCell, cell->cellIdxInChn);}else if (ChnUpStatePause == chnStaMapMed2Up(chn)&& BitIsSet(seriesInd->pausedCell, cell->cellIdxInChn)){trayChnSmpl->chnUpState = ChnUpStatePause;trayChnSmpl->stepId = chn->chnStepId;trayChnSmpl->stepType = chn->chnStepType;}else{trayChnSmpl->chnUpState = ChnUpStateIdle;trayChnSmpl->stepId = StepIdNull;trayChnSmpl->stepType = StepTypeNull;}}else{trayChnSmpl->chnUpState = chnStaMapMed2Up(chn);trayChnSmpl->stepId = chn->chnStepId;trayChnSmpl->stepType = chn->chnStepType;}trayChnSmpl->stepSubType = chn->stepSubType;trayChnSmpl->causeCode = cell->cellCause;if (LowBypsSwCc == cell->swState)  /*todo,以下位机数据为依据不合理*/{cell->cellCapStep = chn->capStep;cell->cellStepRunTime = chn->stepRunTime + chn->stepRunTimeCtnu;}trayChnSmpl->stepRunTime = cell->cellStepRunTime;trayChnSmpl->volCell = cellProtBuf->newVolCell;trayChnSmpl->volCur = cellProtBuf->newVolCur;trayChnSmpl->volPort = cellProtBuf->newVolPort;trayChnSmpl->volInner = chn->volInner;trayChnSmpl->current = cellProtBuf->newCur;trayChnSmpl->capacity = cell->cellCapStep;trayChnSmpl->tmprPower = chn->tmprPower;trayChnSmpl->volBus = chn->volBus;}}}return;}void chnSaveTraySmplOld(Channel *chn, u16eCauseCode cause){TraySmpl *traySmpl;TrayChnSmpl *trayChnSmpl;traySmpl = ((TraySmplRcd *)chn->box->tray->smplMgr.smplBufAddr)->traySmpl;trayChnSmpl = &traySmpl->chnSmpl[chn->genIdxInTray];chnSaveTraySmpl(chn, trayChnSmpl);trayChnSmpl->causeCode = cause;if (NULL != chn->cell){Cell *cell;Cell *cellCri;trayChnSmpl++;for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++){trayChnSmpl->causeCode = cause;trayChnSmpl++;}}return;}u8eUpChnState chnStaMapMed2Up(Channel *chn){return gDevMgr->chnStaMapMed2Up[chn->chnStateMed];}void bypsSeriesChnProt(Channel *chn, u8eChnProtPolicy protPolicy){if (NULL != chn->bypsSeriesInd){BypsSeriesInd *seriesInd;seriesInd = chn->bypsSeriesInd;if (ChnProtPause == protPolicy){seriesInd->pausedCell = seriesInd->startCell & ~seriesInd->stopedCell;}else{seriesInd->stopedCell = seriesInd->startCell;seriesInd->pausedCell = 0;}seriesInd->stopingCell = seriesInd->startCell;}return;}void chnStopByProt(Channel *chn, b8 beTrayProt){Cell *cell;Cell *cellCri;TraySmpl *traySmpl;TrayChnSmpl *trayChnSmpl;u8eChnProtPolicy protPolicy;u8 expId;traySmpl = ((TraySmplRcd *)chn->box->tray->smplMgr.smplBufAddr)->traySmpl;trayChnSmpl = &traySmpl->chnSmpl[chn->genIdxInTray];if (ChnStaRun == chn->chnStateMed) /*正在运行就截止容量*/{chnEndCapCalc(chn);}if (!chn->smplPres)  /*本轮无采样就用老数据*/{chnSaveTraySmpl(chn, trayChnSmpl);}/*确定是否要下发停止和修改状态*/protPolicy = NULL==chn->flowProtEntry ? ChnProtPause : chn->flowProtEntry->flowProtCfg->protPolicy;protPolicy = beTrayProt ? ChnProtPause : protPolicy;if (ChnStaRun==chn->chnStateMed || ChnStaStart==chn->chnStateMed){chn->chnStateMed = protPolicy==ChnProtPause ? ChnStaMedPauseWait : ChnStaMedIdleWait;bypsSeriesChnProt(chn, protPolicy);boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStop);}else if (ChnStaLowProtEnd==chn->chnStateMed || ChnStaLowNmlEnd==chn->chnStateMed){chn->chnStateMed = protPolicy==ChnProtPause ? ChnStaMedPauseWait : ChnStaMedIdleWait;bypsSeriesChnProt(chn, protPolicy);}else if (ChnStaNpWait==chn->chnStateMed || ChnStaMedEnd==chn->chnStateMed){chn->chnStateMed = protPolicy==ChnProtPause ? ChnStaPause : ChnStaIdle;bypsSeriesChnProt(chn, protPolicy);if (ChnStaIdle == chn->chnStateMed){chn->chnStepType = StepTypeNull;chn->chnStepId = StepIdNull;}}/*修改采样中的异常码和状态*/CcChkModify(trayChnSmpl->causeCode, chn->chnProtBuf.newCauseCode);if (CcMixBase == CcBaseGet(trayChnSmpl->causeCode)){expId = trayChnSmpl->causeCode & 0xff;trayChnSmpl->causeCode = (0x80+expId << 24) + chn->box->tray->trayProtMgr.mixProtHpn[expId];}if (ChnUpStateStart==trayChnSmpl->chnUpState || ChnUpStateNp==trayChnSmpl->chnUpState){trayChnSmpl->chnUpState = ChnUpStateRun;}if (NULL != chn->cell){trayChnSmpl++;for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++,trayChnSmpl++){CcChkModify(cell->chnProtBuf.newCauseCode, chn->chnProtBuf.newCauseCode);CcChkModify(trayChnSmpl->causeCode, cell->chnProtBuf.newCauseCode);if (CcMixBase == CcBaseGet(trayChnSmpl->causeCode)){expId = trayChnSmpl->causeCode & 0xff;trayChnSmpl->causeCode = (0x80+expId << 24) + chn->box->tray->trayProtMgr.mixProtHpn[expId];}if (ChnUpStateStart==trayChnSmpl->chnUpState || ChnUpStateNp==trayChnSmpl->chnUpState){trayChnSmpl->chnUpState = ChnUpStateRun;}}}trayNpChnFree(chn->box->tray, chn);chn->capStep = 0;chn->capCtnu = 0;chn->stepRunTime = 0;chn->stepRunTimeCtnu = 0;return;}void _____begin_chn_state_machine_____(){}void chnStaMapIdle(Channel *chn, void *lowData){ChnSmplParall *lowSmpl;lowSmpl = (ChnSmplParall *)lowData;if (LowChnStateRun == lowSmpl->chnLowState){boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStop);chn->chnStateMed = ChnStaIdle==chn->chnStateMed ? ChnStaMedIdleWait : ChnStaMedPauseWait;}if (lowSmpl->cause <= CcFlowStopEnd){lowSmpl->cause = 0;}return;}void chnStaMapNpWait(Channel *chn, void *lowData){return;}/*已下发启动*/void chnStaMapStart(Channel *chn, void *lowData){ChnSmplParall *lowSmpl;lowSmpl = (ChnSmplParall *)lowData;if (LowChnStateRun==lowSmpl->chnLowState && chn->chnStepId==lowSmpl->stepId&& chn->chnStepType == lowSmpl->stepType>>3){chn->chnStateMed = ChnStaRun;chnEnterRun(chn, lowSmpl->timeStamp);if (0 != lowSmpl->cause){chnEndCapCalc(chn);if (lowSmpl->cause < CcFlowPauseEnd) /*上来就截止*/{chn->chnStateMed = ChnStaLowNmlEnd;}else if (lowSmpl->cause > CcFlowStopEnd)  /**/{chn->chnStateMed = ChnStaLowProtEnd;}}}else{chn->dynStaCnt++;if (chn->dynStaCnt > LowStartExprCnt){setChnAbnml(chn, Cc1LowStartExpr);}}return;}/*运行态防呆,比如下位机超时不截止,todo*/void chnStaMapRun(Channel *chn, void *lowData){ChnSmplParall *lowSmpl;lowSmpl = (ChnSmplParall *)lowData;if (LowChnStateRun!=lowSmpl->chnLowState || chn->chnStepId!=lowSmpl->stepId){setChnAbnml(chn, Cc1LowAbnmlEnd);return;}chnRunTimeUpd(chn, lowSmpl->timeStamp);chn->capStep = chn->capCtnu + chn->capLow;if (0 != lowSmpl->cause){chnEndCapCalc(chn);if (lowSmpl->cause < CcFlowPauseEnd){chn->chnStateMed = ChnStaLowNmlEnd;}else if (lowSmpl->cause > CcFlowStopEnd)  /**/{chn->chnStateMed = ChnStaLowProtEnd;}}else if (NULL != chn->bypsSeriesInd){Cell *cell;Cell *cellCri;BypsSeriesInd *seriesInd;seriesInd = chn->bypsSeriesInd;for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++){if (BitIsSet(seriesInd->endingCell, cell->cellIdxInChn)){BitSet(seriesInd->nmlEndCell, cell->cellIdxInChn);BitClr(seriesInd->endingCell, cell->cellIdxInChn);BitClr(seriesInd->runCell, cell->cellIdxInChn);}if (0 != cell->cellCause){if (cell->cellCause < CcFlowPauseEnd){BitSet(seriesInd->endingCell, cell->cellIdxInChn);}else if (cell->cellCause > CcFlowStopEnd)  /**/{chn->chnStateMed = ChnStaLowProtEnd;chnEndCapCalc(chn);}}}if (ChnStaLowProtEnd != chn->chnStateMed){if (seriesInd->runCell == seriesInd->endingCell){chn->chnStateMed = ChnStaLowNmlEnd;chnEndCapCalc(chn);}}}return;}/*上位机触发停止,停止已下发,需等到下位机最后的数据*/void chnStaMapUpStopReq(Channel *chn, void *lowData){ChnSmplParall *lowSmpl;lowSmpl = (ChnSmplParall *)lowData;if (LowChnStateRun == lowSmpl->chnLowState){if (ChnStaUpStopStartReq == chn->chnStateMed){chnEnterRun(chn, lowSmpl->timeStamp);chn->chnStateMed = ChnStaUpStopReq;}else{chnRunTimeUpd(chn, lowSmpl->timeStamp);chn->capStep = chn->capCtnu + chn->capLow;}if (0 != lowSmpl->cause){chnEndCapCalc(chn);chn->chnStateMed = ChnStaUpStopEnd;}else{chn->dynStaCnt++;if (chn->dynStaCnt > LowStopExprCnt){setChnAbnml(chn, Cc1LowEndExpr);}}}else{if (ChnStaUpStopReq == chn->chnStateMed){setChnAbnml(chn, Cc1LowAbnmlEnd);}else if (ChnStaUpStopStartReq == chn->chnStateMed){chn->dynStaCnt++;if (chn->dynStaCnt > LowStopExprCnt){setChnAbnml(chn, Cc1LowEndExpr);}}else  /*ChnStaUpStopNpReq*/{chn->lowCause = CcFlowStopEnd;chn->chnStateMed = ChnStaUpStopEnd;}}return;}/*上位机触发暂停,停止已下发,需等到下位机最后的数据*/void chnStaMapUpPauseReq(Channel *chn, void *lowData){ChnSmplParall *lowSmpl;lowSmpl = (ChnSmplParall *)lowData;if (LowChnStateRun == lowSmpl->chnLowState){if (ChnStaUpPauseStartReq == chn->chnStateMed){chnEnterRun(chn, lowSmpl->timeStamp);chn->chnStateMed = ChnStaUpPauseReq;}else{chnRunTimeUpd(chn, lowSmpl->timeStamp);chn->capStep = chn->capCtnu + chn->capLow;}if (0 != lowSmpl->cause){chnEndCapCalc(chn);if (CcFlowStopEnd == lowSmpl->cause){chn->lowCause = CcFlowPauseEnd;}chn->chnStateMed = ChnStaUpPauseEnd;}else{chn->dynStaCnt++;if (chn->dynStaCnt > LowStopExprCnt){setChnAbnml(chn, Cc1LowEndExpr);}}}else{chn->dynStaCnt++;if (ChnStaUpPauseReq == chn->chnStateMed){setChnAbnml(chn, Cc1LowAbnmlEnd);}else if (ChnStaUpPauseStartReq == chn->chnStateMed){if (chn->dynStaCnt > LowStopExprCnt){setChnAbnml(chn, Cc1LowEndExpr);}}else  /*ChnStaUpPauseNpReq*/{chn->lowCause = CcFlowPauseEnd;chn->chnStateMed = ChnStaUpPauseEnd;}}return;}/*上位机触发停止已完成且已经收到下位机的截止数据并上传,等下位机空闲*/void chnStaMapUpStopEnd(Channel *chn, void *lowData){ChnSmplParall *lowSmpl;lowSmpl = (ChnSmplParall *)lowData;if (LowChnStateRun == lowSmpl->chnLowState){chn->dynStaCnt++;chn->chnStateMed = ChnStaMedIdleWait;chn->chnStepType = StepTypeNull;chn->chnStepId = StepIdNull;}else{chn->chnStateMed = ChnStaIdle;trayNpChnFree(chn->box->tray, chn);chnEnterIdle(chn);}return;}/*上位机触发暂停已完成且已经收到下位机的截止数据并上传,只等下位机空闲*/void chnStaMapUpPauseEnd(Channel *chn, void *lowData){ChnSmplParall *lowSmpl;lowSmpl = (ChnSmplParall *)lowData;if (LowChnStateRun == lowSmpl->chnLowState){chn->dynStaCnt++;chn->chnStateMed = ChnStaMedPauseWait;chn->chnStepType = StepTypeNull;chn->chnStepId = StepIdNull;}else{chn->chnStateMed = ChnStaPause;trayNpChnFree(chn->box->tray, chn);chnEnterIdle(chn);}return;}/*工步不走下位机而由中位机直接截止会走这里,目前只有定容*/void chnStaMapMedEnd(Channel *chn, void *lowData){if (0 != chn->lowCause){chn->chnStateMed = ChnStaLowProtEnd;}else{chn->lowCause = CcLowTimeEnd;}return;}/*下位机保护,且截止数据完毕,只等下位机空闲*/void chnStaMapLowProtEnd(Channel *chn, void *lowData){ChnSmplParall *lowSmpl;lowSmpl = (ChnSmplParall *)lowData;if (LowChnStateRun==lowSmpl->chnLowState || LowChnStateStart==lowSmpl->chnLowState){chn->chnStepType = StepTypeNull;chn->chnStepId = StepIdNull;chn->chnStateMed = chn->flowProtEntry->flowProtCfg->protPolicy==ChnProtPause ? ChnStaMedPauseWait : ChnStaMedIdleWait;chn->dynStaCnt++;}else{chn->chnStateMed = chn->flowProtEntry->flowProtCfg->protPolicy==ChnProtPause ? ChnStaPause : ChnStaIdle;trayNpChnFree(chn->box->tray, chn);chnEnterIdle(chn);}return;}void chnStaMapIdleWait(Channel *chn, void *lowData){ChnSmplParall *lowSmpl;lowSmpl = (ChnSmplParall *)lowData;if (LowChnStateRun==lowSmpl->chnLowState){chn->dynStaCnt++;if (chn->dynStaCnt > LowStopExprCnt){setChnAbnml(chn, Cc1LowEndExpr);boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStop);}}else{chn->chnStateMed = ChnStaIdle;trayNpChnFree(chn->box->tray, chn);chnEnterIdle(chn);}if (lowSmpl->cause <= CcFlowStopEnd){lowSmpl->cause = 0;}return;}void chnStaMapPauseWait(Channel *chn, void *lowData){ChnSmplParall *lowSmpl;lowSmpl = (ChnSmplParall *)lowData;if (LowChnStateRun==lowSmpl->chnLowState || LowChnStateStart==lowSmpl->chnLowState){chn->dynStaCnt++;if (chn->dynStaCnt > LowStopExprCnt){setChnAbnml(chn, Cc1LowEndExpr);boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStop);}}else{chn->chnStateMed = ChnStaPause;trayNpChnFree(chn->box->tray, chn);chnEnterIdle(chn);}if (lowSmpl->cause <= CcFlowStopEnd){lowSmpl->cause = 0;}return;}void _____endof_chn_state_machine_____(){}void chnLowSmplProc(Channel *chn, void *upSmplBuf, void *lowSmpl){TrayChnSmpl *trayChnSmpl;trayChnSmpl = (TrayChnSmpl *)upSmplBuf;chnSavePowerSmpl(chn, lowSmpl);gChnMgr->chnStaMap[chn->chnStateMed](chn, lowSmpl);chnSaveTraySmpl(chn, trayChnSmpl);if (!chn->box->tray->protDisable){chnProtWork(chn);}if (ChnStaStart==chn->chnStateMed && NULL!=chn->bypsSeriesInd){BypsSeriesInd *seriesInd;/*旁路串联电芯直接截止的情况,主通道启动态,电芯正常截止+切出态*//*上传采样的保存已经在chnSaveTraySmpl中做,这里检查全部直接截止*//*若在chnSaveTraySmpl一并做,则修改主通道运行态会涉及保护,改的更多*/seriesInd = chn->bypsSeriesInd;if (seriesInd->startCell == (seriesInd->nmlEndCell|seriesInd->pausedCell|seriesInd->stopedCell)){chn->chnStateMed = ChnStaLowNmlEnd;chnEndCapCalc(chn);}}if (ChnStaLowNmlEnd==chn->chnStateMed || ChnStaMedEnd==chn->chnStateMed){chnStepLowNmlEnd(chn);}return;}void chnInit(){ChnMgr *mgr;u16 idx;gChnMgr = mgr = sysMemAlloc(sizeof(ChnMgr));for (idx=0; idx<TimerIdCri; idx++){mgr->chnStaMap[idx] = (ChnStaMap)chnProcIgnore;}mgr->chnStaMap[ChnStaIdle] = chnStaMapIdle;mgr->chnStaMap[ChnStaPause] = chnStaMapIdle;mgr->chnStaMap[ChnStaNpWait] = chnStaMapNpWait;mgr->chnStaMap[ChnStaStart] = chnStaMapStart;mgr->chnStaMap[ChnStaRun] = chnStaMapRun;mgr->chnStaMap[ChnStaUpStopReq] = chnStaMapUpStopReq;mgr->chnStaMap[ChnStaUpPauseReq] = chnStaMapUpPauseReq;mgr->chnStaMap[ChnStaUpStopEnd] = chnStaMapUpStopEnd;mgr->chnStaMap[ChnStaUpPauseEnd] = chnStaMapUpPauseEnd;mgr->chnStaMap[ChnStaMedEnd] = chnStaMapMedEnd;mgr->chnStaMap[ChnStaUpStopStartReq] = chnStaMapUpStopReq;mgr->chnStaMap[ChnStaUpPauseStartReq] = chnStaMapUpPauseReq;mgr->chnStaMap[ChnStaUpStopNpReq] = chnStaMapUpStopReq;mgr->chnStaMap[ChnStaUpPauseNpReq] = chnStaMapUpPauseReq;mgr->chnStaMap[ChnStaLowProtEnd] = chnStaMapLowProtEnd;mgr->chnStaMap[ChnStaMedPauseWait] = chnStaMapPauseWait;mgr->chnStaMap[ChnStaMedIdleWait] = chnStaMapIdleWait;return;}#endif

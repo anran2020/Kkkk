@@ -9,11 +9,14 @@
 #define Align8(amt) (((amt)+3) & 0xfffc)
 #define AlignStr(len) (((len)+4) & 0xfffc)
 
-#define LowDynStaCntMax 8
+#define LowStartExprCnt 8  /*下位机启动超时采样次数*/
+#define LowStopExprCnt 4  /*下位机停止超时采样次数*/
 
 #define ParamAmt  8
 #define StepIdNull 255
 #define MsgSmplAmtMax 20
+#define LoopAmtMax 10  /*流程中最大循环工步数量*/
+//#define MixExpAmtMax 16  /*组合表达式最大数量*/
 
 /*todo,这个需要改为配置*/
 #define TmprValidMax 1300
@@ -42,6 +45,7 @@
 #define IsSpaceSuffix(c) (' '==(c) || '\t'==(c) || '\r'==(c) || '\n'==(c))
 
 #define LineLenMax 255   /*单行字符串长度,并扩展到一般性*/
+
 
 #endif
 #endif

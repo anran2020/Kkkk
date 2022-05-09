@@ -31,9 +31,8 @@ typedef u8 u8eUpMsgGrp;
 
 /*上位机消息类型*/
 /*量产电源柜命令类*/
-/*对应协议*/
 typedef u8 u8eUpMsgIdManu;
-#define UpMsgIdManuConn         0x00   /*联机*/
+#define UpMsgIdManuConn         0x00
 #define UpMsgIdManuFlow         0x01
 #define UpMsgIdManuProtGen     0x02   /*全程或全时保护*/
 #define UpMsgIdManuProtStep     0x03  /*特定工步和全局工步*/
@@ -49,7 +48,9 @@ typedef u8 u8eUpMsgIdManu;
 #define UpMsgIdManuKeepAlive      0x0d
 #define UpMsgIdManuWarnDel        0x0e
 #define UpMsgIdManuCtnu         0x0f
-#define UpMsgIdManuCri          0x10
+#define UpMsgIdManuCellSw          0x10
+#define UpMsgIdManuRgbCtrl          0x11
+#define UpMsgIdManuCri          0x12
 
 /*配置升级命令类*/
 typedef u8 u8eUpMsgIdUpdate;
@@ -118,17 +119,23 @@ typedef u8 u8eUpMsgIdFixtFlow;
 
 typedef u8 u8eUpMsgIdFixtSuctIn;
 #define UpMsgIdFixtSuctInSmpl   0x00  /*插吸嘴采样*/
-#define UpMsgIdFixtSuctInCri    0x01
+#define UpMsgIdFixtSuctIn2Smpl   0x02  /*插吸嘴2型采样*/
+#define UpMsgIdFixtSuctIn2Act   0x03  /*插吸嘴2型采样*/
+#define UpMsgIdFixtSuctInCri    0x04
 
 typedef u8 u8eUpMsgIdFixtSuctOut;
-#define UpMsgIdFixtSuctOutAct    0x00  /*拔吸嘴动作*/
-#define UpMsgIdFixtSuctOutSmpl   0x01  /*拔吸嘴采样*/
-#define UpMsgIdFixtSuctOutCri    0x02
+#define UpMsgIdFixtSuctOutSmpl   0x00  /*拔吸嘴采样*/
+#define UpMsgIdFixtSuctOutAct    0x01  /*拔吸嘴动作*/
+#define UpMsgIdFixtSuctOut2Smpl   0x02  /*拔吸嘴2型采样*/
+#define UpMsgIdFixtSuctOut2Act    0x03  /*拔吸嘴2型动作*/
+#define UpMsgIdFixtSuctOutCri    0x04
 
 typedef u8 u8eUpMsgIdFixtLocat;  /*定位工装*/
 #define UpMsgIdFixtLocatSmpl   0x00  /*采样*/
 #define UpMsgIdFixtLocatAct    0x01
-#define UpMsgIdFixtLocatCri    0x02
+#define UpMsgIdFixtLocat2Smpl   0x02  /*2型采样*/
+#define UpMsgIdFixtLocat2Act    0x03  /*2型动作*/
+#define UpMsgIdFixtLocatCri    0x04
 
 #define UpMsgIdFixt(type, id) (UpMsgIdFixtBase(type) + (id))
 #define UpCmdId(group, id) (UpMsgGrpBase(group) + (id))
@@ -148,6 +155,8 @@ typedef u8 u8eUpMsgIdFixtLocat;  /*定位工装*/
 #define UpCmdIdManuCtnu  (UpCmdId(UpMsgGrpManu, UpMsgIdManuCtnu))
 #define UpCmdIdManuCtnuStack  (UpCmdId(UpMsgGrpManu, UpMsgIdManuCtnuStack))
 #define UpCmdIdManuWarnDel  (UpCmdId(UpMsgGrpManu, UpMsgIdManuWarnDel))
+#define UpCmdIdManuCellSw  (UpCmdId(UpMsgGrpManu, UpMsgIdManuCellSw))
+#define UpCmdIdManuRgbCtrl  (UpCmdId(UpMsgGrpManu, UpMsgIdManuRgbCtrl))
 #define UpCmdIdUpdCfgRead  (UpCmdId(UpMsgGrpUpdate, UpMsgIdUpdCfgRead))
 #define UpCmdIdUpdCfgSet  (UpCmdId(UpMsgGrpUpdate, UpMsgIdUpdCfgSet))
 #define UpCmdIdUpdSetup  (UpCmdId(UpMsgGrpUpdate, UpMsgIdUpdSetup))
@@ -171,10 +180,16 @@ typedef u8 u8eUpMsgIdFixtLocat;  /*定位工装*/
 #define UpCmdIdFixtGasSmpl  (UpCmdId(UpMsgGrpFixt, UpMsgIdFixt(FixtProtoGas, UpMsgIdFixtGasSmpl)))
 #define UpCmdIdFixtFlowSmpl  (UpCmdId(UpMsgGrpFixt, UpMsgIdFixt(FixtProtoFlow, UpMsgIdFixtFlowSmpl)))
 #define UpCmdIdFixtSuctInSmpl  (UpCmdId(UpMsgGrpFixt, UpMsgIdFixt(FixtProtoSuctIn, UpMsgIdFixtSuctInSmpl)))
-#define UpCmdIdFixtSuctOutAct  (UpCmdId(UpMsgGrpFixt, UpMsgIdFixt(FixtProtoSuctOut, UpMsgIdFixtSuctOutAct)))
 #define UpCmdIdFixtSuctOutSmpl  (UpCmdId(UpMsgGrpFixt, UpMsgIdFixt(FixtProtoSuctOut, UpMsgIdFixtSuctOutSmpl)))
+#define UpCmdIdFixtSuctOutAct  (UpCmdId(UpMsgGrpFixt, UpMsgIdFixt(FixtProtoSuctOut, UpMsgIdFixtSuctOutAct)))
 #define UpCmdIdFixtLocatSmpl  (UpCmdId(UpMsgGrpFixt, UpMsgIdFixt(FixtProtoLocat, UpMsgIdFixtLocatSmpl)))
 #define UpCmdIdFixtLocatAct  (UpCmdId(UpMsgGrpFixt, UpMsgIdFixt(FixtProtoLocat, UpMsgIdFixtLocatAct)))
+#define UpCmdIdFixtSuctIn2Smpl  (UpCmdId(UpMsgGrpFixt, UpMsgIdFixt(FixtProtoSuctIn, UpMsgIdFixtSuctIn2Smpl)))
+#define UpCmdIdFixtSuctIn2Act  (UpCmdId(UpMsgGrpFixt, UpMsgIdFixt(FixtProtoSuctIn, UpMsgIdFixtSuctIn2Act)))
+#define UpCmdIdFixtSuctOut2Smpl  (UpCmdId(UpMsgGrpFixt, UpMsgIdFixt(FixtProtoSuctOut, UpMsgIdFixtSuctOut2Smpl)))
+#define UpCmdIdFixtSuctOut2Act  (UpCmdId(UpMsgGrpFixt, UpMsgIdFixt(FixtProtoSuctOut, UpMsgIdFixtSuctOut2Act)))
+#define UpCmdIdFixtLocat2Smpl  (UpCmdId(UpMsgGrpFixt, UpMsgIdFixt(FixtProtoLocat, UpMsgIdFixtLocat2Smpl)))
+#define UpCmdIdFixtLocat2Act  (UpCmdId(UpMsgGrpFixt, UpMsgIdFixt(FixtProtoLocat, UpMsgIdFixtLocat2Act)))
 
 /*---------------整体消息结构，开始-----------------*/
 typedef struct
@@ -289,7 +304,7 @@ typedef struct
 
 /*---------------采样消息，开始-----------------*/
 /*采样命令*/
-/*通道模式下通道,针床,运行栈统一采样命令*/
+/*通道模式下通道,针床统一采样命令*/
 typedef struct
 {
     u8 trayIdx;
@@ -297,6 +312,15 @@ typedef struct
     u16 rsvd;
     u32 smplSeq;
 }UpSmplCmd;
+
+typedef struct
+{
+    u8 trayIdx;
+    u8 smplAmt;
+    u16 chnAmt;
+    u32 smplSeq;
+    u16 chnId[0];
+}UpSmplStackCmd;
 
 /*单通道数据*/
 typedef struct
@@ -343,22 +367,11 @@ typedef struct
     u16 slotTmpr[0];
 }UpNdbdSmpl;
 
-/*通道运行数据*/
 typedef struct
 {
-    u8 stepId;
-    u8 rsvd;
-    u16 leftAmt;   /*循环剩余次数*/
-}LoopDscr;
-typedef struct
-{
-    u32 timeStampSec;
-    u16 timeStampMs;
     u8eChnType chnType;
     u8 flowLoopAmt;
     u16 chnIdx;
-    u16 rsvd;
-    u32 capacity;   /*累积容量，不含当前工步容量*/
     LoopDscr loopDscr[0];   /*loop describe*/
 }RunStack;
 
@@ -372,10 +385,22 @@ typedef struct
     u32 nextWriteSeq;    /*中位机下次生成采样的序号*/
     u8 smpl[0];
     UpChnlSmpl chnlSmpl[0];
-    RunStack runStack[0];
     UpNdbdSmpl ndbdSmpl[0];
 }UpSmplAck;
 
+/*运行栈采样响应*/
+typedef struct
+{
+    u16eRspCode rspCode;
+    u8 trayIdx;
+    u8 rsvd1;
+    u32 timeStamp;
+    u16 chnAmt;
+    u16 rsvd2;
+    RunStack runStack[0];
+}UpSmplStackAck;
+
+#if 0  /*采样版本 v1.0*/
 typedef struct
 {
     u8eChnType chnType;
@@ -410,6 +435,48 @@ typedef struct
     u16 slotTmpr[0];
     u16 cellTmpr[0];
 }TrayNdbdSmpl;
+#else  /*采样版本 v1.1*/
+typedef struct
+{
+    u8eChnType chnType;
+    u8eUpChnState chnUpState;
+    u8 stepId; /*0-254合法,255无效*/
+    u8eStepType stepType;
+    u8eStepSubType stepSubType;
+    u8 inLoop;   /*串联时，电芯是否在回路中*/
+    u16 tmprPower;  /*功率管温度*/
+    u32 causeCode;  /*bit31-0:u16eCauseCode, bit31-1:组合保护*/
+    u32 stepRunTime;  /*毫秒*/
+    s32 current;
+    s32 volCell;    /*电池电压，电压采样线电压*/
+    s32 volCur;    /*电流探针电压*/
+    s32 volPort;    /*设备端口电压*/
+    s32 volInner;    /*内部电容电压*/
+    s32 volBus;   /*母线电压*/
+    u32 capacity;  /*工步容量,含续接*/
+}TrayChnSmpl;
+
+typedef struct
+{
+    u8eNdbdDynType dataType;
+    u8 rsvd;
+    u16 dataLen;  /*data中的有效数据长度*/
+    u8 data[0];  /*基于dataLen且按4对齐*/
+}NdbdDynData;
+
+typedef struct
+{
+    u8eTrayEnterState enterState;    /*入料状态*/
+    u8eTrayTouchState touchState;    /*压合状态*/
+    u8 cylinderWarn; /*0无1压合2分离3感应器*/
+    u8 smokeWarn;  /*0无1前2后3都*/
+    s16 npVal;
+    u16 ratioAnalog;
+    u32 bitmapState;
+    u32 bitmapAlarm;
+    NdbdDynData dynData[0];
+}TrayNdbdSmpl;
+#endif
 
 typedef u8 u8eTraySmplType;
 #define TraySmplChn 0x00
@@ -483,7 +550,7 @@ typedef struct
 /*---------------保护消息，开始-----------------*/
 
 /*保护单元*/
-typedef struct upProtUnitTag
+typedef struct
 {
     u16 protId;
     u8 stepId;   /*适用工步号，全局保护时保留*/
@@ -492,27 +559,27 @@ typedef struct upProtUnitTag
 }UpProtUnit;
 
 /*组合保护*/
-typedef struct upFixProtTag
+typedef struct
 {
-    u16 fixProtlen;
+    u16 mixProtLen;
     u16 rsvd;
-    u8 fixProtAby[0];
-}UpFixProt;
+    u8 mixProtAby[0];
+}UpMixProt;
 
 /*全程保护命令*/
-typedef struct upProtGenCmdTag
+typedef struct
 {
     u8 trayIdx;
-    u8 fixProtAmt;
+    u8 mixProtAmt;
     u16 protAmtTtl;
     u16 protSeq;
     u16 protAmt;
-    UpFixProt fixProt[0];
+    UpMixProt mixProt[0];
     UpProtUnit protUnit[0];
 }UpProtGenCmd;
 
 /*工步保护命令*/
-typedef struct upProtStepCmdTag
+typedef struct
 {
     u8 trayIdx;
     u8 rsvd0;
@@ -530,7 +597,7 @@ typedef struct upProtStepCmdTag
 
 /*---------------启停控制消息，开始-----------------*/
 /*启动电芯指示*/
-typedef struct upStartChnlIndTag
+typedef struct
 {
     u16 chnId;
     u8 stepId;
@@ -549,24 +616,66 @@ typedef struct
     LoopDscr loopDscr[0];
 }UpCtnuChnlInd;
 
-/*停止，暂停，跳转*/
-typedef struct upFlowCtrlCmdTag
+/*停止，暂停，跳转, 启动,续接*/
+typedef struct
 {
     u8 trayIdx;
     u8 jumpStepId;    /*跳转命令有效，其余保留*/
     u16 chnAmt;   /*0--整盘，否则表示通道电芯/数量*/
     u16 chnId[0];   /*暂停，停止，跳转*/
-    UpStartChnInd startInd[0];
-    UpCtnuChnlInd ctnuInd[0];
+    UpStartChnInd startInd[0];  /*启动*/
+    UpCtnuChnlInd ctnuInd[0];  /*续接*/
 }UpFlowCtrlCmd;
+
+/*空闲时切入切出*/
+typedef struct
+{
+    u8 trayIdx;
+    u8 swInd;    /*0--切出,1--切入*/
+    u16 chnAmt;   /*0--整盘，否则表示通道电芯/数量*/
+    u16 chnId[0];   /**/
+}UpSeriesSwCmd;
+
+typedef struct
+{
+  u8 rgbInd;  /*bit0--绿,bit1--黄,bit2--红,0灭1亮,bit3--蜂鸣,0停1响*/
+  u8 rsvd[3];
+}UpRgbCtrlCmd;
 
 /*启停消息的响应适用通用上位机响应*/
 /*---------------启停控制消息，结束-----------------*/
 
 /*---------------配置升级消息，开始-----------------*/
-/*配置读取*/
+/*配置读取,若错误则响应适用通用*/
+typedef struct
+{
+    u8eUpUpdDevType devType;
+    u8 trayIdx;   /*非中位机有效*/
+    u16 devId;   /*非中位机有效*/
+}UpCfgReadCmd;
 
-/*配置下发设置*/
+typedef struct
+{
+    u16 cfgType;
+    u16 cfgLen;
+    u32 cfgVal[0];
+}UpCfgTlv;
+
+typedef struct
+{
+    u16 rspCode;
+    u16 rsvd;
+    UpCfgTlv cfgTlv[0];
+}UpCfgReadAck;
+
+/*配置下发设置,响应适用通用*/
+typedef struct
+{
+    u8eUpUpdDevType devType;
+    u8 trayIdx;   /*非中位机有效*/
+    u16 devId;   /*非中位机有效*/
+    UpCfgTlv cfgTlv[0];
+}upCfgSetCmd;
 
 /*启动传输*/
 typedef struct
@@ -670,7 +779,7 @@ typedef struct
     u16 chnIdx; /*托盘内索引*/
     u8eCaliMode caliMode;
     u8eCaliType caliType;
-    b8 isStart;  /*真起假停,假时trayIdx和chnIdx有效，其余保留*/
+    b8 isStart;  /*真起假停,假时trayIdx和chnIdx有效其余字段保留*/
     u8 rsvd;
     u32 caliKbPoint;
 }UpCaliStartCmd;
@@ -858,7 +967,7 @@ typedef struct
     u16 flowVal[0];
 }UpFixtFlowSmplAck;
 
-/*插吸嘴工装采样命令*/
+/*插吸嘴工装1型2型采样命令*/
 typedef struct
 {
     u8 trayIdx;
@@ -866,7 +975,7 @@ typedef struct
     u16 delayTime;
 }UpFixtSuckInSmplCmd;
 
-/*插吸嘴工装采样应答*/
+/*插吸嘴工装1型采样应答*/
 typedef struct
 {
     u16eRspCode rspCode;
@@ -874,14 +983,32 @@ typedef struct
     b8 hasRemain;
 }UpFixtSuckInSmplAck;
 
-/*拔吸嘴工装采样命令*/
+/*插吸嘴工装2型采样应答*/
+typedef struct
+{
+    u16eRspCode rspCode;
+    u8 trayIdx;
+    b8 hasRemain;
+    u8 topUpPos;  /*顶升杆位置*/
+    u8 rsvd[3];
+}UpFixtSuckIn2SmplAck;
+
+/*插吸嘴工装2型动作命令,应答通用*/
+typedef struct
+{
+    u8 trayIdx;
+    u8 topUpAct;   /*顶升杆动作,0忽略1上升2下降*/
+    u16 rsvd;
+}UpFixtSuckIn2ActCmd;
+
+/*拔吸嘴工装1型2型采样命令*/
 typedef struct
 {
     u8 trayIdx;
     u8 rsvd[3];   /**/
 }UpFixtSuckOutSmplCmd;
 
-/*拔吸嘴工装采样应答*/
+/*拔吸嘴工装1型采样应答*/
 typedef struct
 {
     u16eRspCode rspCode;
@@ -892,7 +1019,19 @@ typedef struct
     u8 rsvd[2];
 }UpFixtSuckOutSmplAck;
 
-/*拔吸嘴工装动作命令,应答适用通用*/
+/*拔吸嘴工装2型采样应答*/
+typedef struct
+{
+    u16eRspCode rspCode;
+    u8 trayIdx;
+    u8 rsvd1;
+    u8eFixtSuckOutStaType state;
+    b8 hasRemain;
+    u8 topUpPos;  /*顶升杆位置*/
+    u8 rsvd;
+}UpFixtSuckOut2SmplAck;
+
+/*拔吸嘴工装1型动作命令,应答适用通用*/
 typedef struct
 {
     u8 trayIdx;
@@ -900,14 +1039,24 @@ typedef struct
     u16 delayTime;
 }UpFixtSuckOutActCmd;
 
-/*定位工装采样命令*/
+/*拔吸嘴工装2型动作命令,应答适用通用*/
+typedef struct
+{
+    u8 trayIdx;
+    u8eFixtSuckOutStaType action;   /**/
+    u16 delayTime;
+    u8 topUpAct;   /*顶升杆动作,0忽略1上升2下降*/
+    u8 rsvd[3];
+}UpFixtSuckOut2ActCmd;
+
+/*定位工装1型2型采样命令*/
 typedef struct
 {
     u8 trayIdx;
     u8 rsvd[3];   /**/
 }UpFixtLocatSmplCmd;
 
-/*定位工装采样应答*/
+/*定位工装1型采样应答*/
 typedef struct
 {
     u16eRspCode rspCode;
@@ -918,7 +1067,19 @@ typedef struct
     u8 rsvd[2];
 }UpFixtLocatSmplAck;
 
-/*定位工装动作命令,应答适用通用*/
+/*定位工装2型采样应答*/
+typedef struct
+{
+    u16eRspCode rspCode;
+    u8 trayIdx;
+    u8 rsvd1;
+    b8 unlockSucc;  /*解锁成功*/
+    u8eFixtLocatPos locatPos;
+    u8 topUpPos;  /*顶升杆位置*/
+    u8 rsvd2;
+}UpFixtLocat2SmplAck;
+
+/*定位工装1型动作命令,应答适用通用*/
 typedef struct
 {
     u8 trayIdx;
@@ -929,6 +1090,18 @@ typedef struct
     u8 rsvd;
     u16 delayTime;
 }UpFixtLocatActCmd;
+
+/*定位工装2型动作命令,应答适用通用*/
+typedef struct
+{
+    u8 trayIdx;
+    u8 cellType;
+    u8eFixtLocatTurnType anodeTurn;  /*正极电机*/
+    u8eFixtLocatTurnType npTurn;  /*负压电机*/
+    u8eFixtLocatTurnType cathodeTurn;  /*负极电机*/
+    u8 topUpAct;   /*顶升杆动作,0忽略1上升2下降*/
+    u16 delayTime;
+}UpFixtLocat2ActCmd;
 
 /*---------------工装消息，结束-----------------*/
 
@@ -1012,7 +1185,7 @@ typedef struct
 extern u8 *sendUpBuf;
 extern u8 *recvUpBuf;
 extern UpItfCb *gUpItfCb;
-extern s32 gAbsTimeSec;
+extern u32 gAbsTimeSec;
 
 #ifdef __cplusplus
 extern "C"  {
@@ -1027,6 +1200,7 @@ extern u8 sendUpMsg(u8 *msg, u16 pldLen, u16 msgId);
 extern void rspUpCmmn(u16 msgId, u8 trayIdx, u16 rspCode);
 extern void rspUpCaliNtfyAck(u8 trayIdx, u8 boxIdx, u16eRspCode rspCode);
 extern void trayUpDiscExpr(Timer *timer);
+extern Channel *upChnMap(Tray *tray, u16 chnIdx, u16 *genIdxInChn);
 
 #ifdef __cplusplus
 }

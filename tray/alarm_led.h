@@ -1,0 +1,1 @@
+/* * alarm_led.h * *  Created on: 2021年10月19日 *      Author: admin */#ifndef ALARM_LED_ALARM_LED_H_#define ALARM_LED_ALARM_LED_H_#include "common_data.h"#include "mlos.h"#define GROUP_NUMS 3void AlarmLight_Switch(mlu8 group,mlu8 yellow,mlu8 green,mlu8 red);void Buzzer_Switch(mlu8 group,mlu8 sta);#endif /* ALARM_LED_ALARM_LED_H_ */

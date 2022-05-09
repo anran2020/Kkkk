@@ -1,4 +1,3 @@
-// 485消息(含工床温度盒针床主控)
 
 #include <string.h>
 #include "basic.h"
@@ -86,6 +85,28 @@ void freeUartBlockBuf(void *buf)
     list = &gUartMgr->blockBufList;
     chain = &((UartBlockCmdBuf *)buf)->chain;
     ChainInsertD(list, chain);
+    return;
+}
+
+void setUartBlockBuf(UartBlockCmdBuf *blockBuf, u8 trayIdx, u16 upCmdId, u8 cmmuAddr,
+                         u8eUartDevType uartDevType, u8eUartMsgId uartMsgId)
+{
+    UartMsgHead *uartHead;
+    UartCmmnCmd *uartCmd;
+
+    blockBuf->trayIdx = trayIdx;
+    blockBuf->reTxCnt = 0;
+    blockBuf->upMsgFlowSeq = gUpItfCb->upMsgFlowSeq;
+    blockBuf->upUartMsgId = upCmdId;
+    blockBuf->uartCmmuAddr = cmmuAddr;
+
+    uartHead = (UartMsgHead *)blockBuf->msgBuf;
+    uartHead->devAddr = cmmuAddr;
+    uartHead->funcCode = UartFuncCode;
+
+    uartCmd = (UartCmmnCmd *)uartHead->payload;
+    uartCmd->devType = uartDevType;
+    uartCmd->msgId = uartMsgId;
     return;
 }
 
@@ -251,10 +272,20 @@ void uartSmplTmprTx(Uart *uart)
             tmprSmplInd++;
         }
 
+        /*水温和库温,现在是连续的,水温后面是库温,暂时简化处理*/
+        /*todo,,以后如果不连续或库温在前或有水温无库温等情况,需要修正这里*/
         if (0 != tmprSmpl->tmprAmt4Loc)
         {
-            tmprSmplInd->tmprSmplChnIdx = tmprSmpl->tmprBase4Loc;
-            tmprSmplInd->tmprSmplChnAmt = tmprSmpl->tmprAmt4Loc;
+            if (0 != tmprSmpl->tmprAmt4Water)
+            {
+                tmprSmplInd->tmprSmplChnIdx = tmprSmpl->tmprBase4Water;
+                tmprSmplInd->tmprSmplChnAmt = tmprSmpl->tmprAmt4Loc+tmprSmpl->tmprAmt4Water;
+            }
+            else
+            {
+                tmprSmplInd->tmprSmplChnIdx = tmprSmpl->tmprBase4Loc;
+                tmprSmplInd->tmprSmplChnAmt = tmprSmpl->tmprAmt4Loc;
+            }
             uartSmplCmd->tmprSmplGrpAmt++;
             uartHead->pldLen += sizeof(TmprSmplInd);
         }
@@ -502,10 +533,12 @@ void uartExprSmplAck(Timer *timer)
             {
                 tmprSmpl->online = False;
                 tmprSmpl->smplExprCnt = 0;
+                tmprSmpl->onlineDelayCnt = 0;
                 sendUpConnNtfy();
             }
         }
 
+    #if 0  /*采样超时,保持原温度,否则会影响容量温度补偿计算*/
         if (tmprSmpl->genCellTmprIdx < devMgr->cellTmprAmt)
         {
             amount = devMgr->cellTmprAmt - tmprSmpl->genCellTmprIdx;
@@ -533,6 +566,22 @@ void uartExprSmplAck(Timer *timer)
                 }
             }
         }
+        if (0 != tmprSmpl->tmprAmt4Water)
+        {
+            if (tmprSmpl->genWaterTmprIdx < devMgr->waterTmprAmt)
+            {
+                amount = devMgr->waterTmprAmt - tmprSmpl->genWaterTmprIdx;
+                if (amount > tmprSmpl->tmprAmt4Water)
+                {
+                    amount = tmprSmpl->tmprAmt4Water;
+                }
+                for (idx=tmprSmpl->genWaterTmprIdx,idxCri=idx+amount; idx<idxCri; idx++)
+                {
+                    devMgr->genSlotWaterTmpr[idx] = 0;
+                }
+            }
+        }
+    #endif
     }
     else
     {
@@ -540,13 +589,15 @@ void uartExprSmplAck(Timer *timer)
 
         ndbdMcu = &devMgr->ndbdMcu[uart->uartCrntSmplDevIdx];
         devMgr->tray[ndbdMcu->ndbdMcuIdx].ndbdData.ndbdDataValid = False;
-        //if (ndbdMcu->online)
+        if (ndbdMcu->online)
         {
             ndbdMcu->smplExprCnt++;
             if (ndbdMcu->smplExprCnt > 3)
             {
                 ndbdMcu->online = False;
                 ndbdMcu->smplExprCnt = 0;
+                ndbdMcu->onlineDelayCnt = 0;
+                devMgr->tray[ndbdMcu->ndbdMcuIdx].ndbdData.status[NdbdStaTouch] = 0;
                 sendUpConnNtfy();
             }
         }
@@ -576,11 +627,16 @@ void uartMsgConnAck(Uart *uart, u8 actAddr, u8 *pld, u16 pldLen)
             uartTmprSmplAck = (TmprSmplConnAck *)pld;
             if (uartTmprSmplAck->isInApp)
             {
-                tmprSmpl->online = True;
                 tmprSmpl->smplExprCnt = 0;
-                sendUpConnNtfy();
+                tmprSmpl->devVer = uartTmprSmplAck->devVer;
+                tmprSmpl->onlineDelayCnt++;
+                if (tmprSmpl->onlineDelayCnt > 0)
+                {
+                    tmprSmpl->online = True;
+                    tmprSmpl->onlineDelayCnt = 0;
+                    sendUpConnNtfy();
+                }
             }
-            tmprSmpl->devVer = uartTmprSmplAck->devVer;
         }
 
         uartSmplDevUpdate(uart);
@@ -596,12 +652,17 @@ void uartMsgConnAck(Uart *uart, u8 actAddr, u8 *pld, u16 pldLen)
             ndbdMcuConnAck = (NdbdMcuConnAck *)pld;
             if (ndbdMcuConnAck->isInApp && ndbdMcuConnAck->protoVer>=gNdbdMcuProtoVer)
             {
-                ndbdMcu->online = True;
                 ndbdMcu->smplExprCnt = 0;
                 ndbdMcu->ctrlReTxCnt = 0;
-                sendUpConnNtfy();
+                ndbdMcu->softVer = ndbdMcuConnAck->devVer;
+                ndbdMcu->onlineDelayCnt++;
+                if (ndbdMcu->onlineDelayCnt > 0)
+                {
+                    ndbdMcu->online = True;
+                    ndbdMcu->onlineDelayCnt = 0;
+                    sendUpConnNtfy();
+                }
             }
-            ndbdMcu->softVer = ndbdMcuConnAck->devVer;
         }
 
         uartSmplDevUpdate(uart);
@@ -685,17 +746,35 @@ void uartMsgSmplAck(Uart *uart, u8 actAddr, u8 *pld, u16 len)
             }
             mem2Copy(&devMgr->genCellTmpr[tmprSmpl->genCellTmprIdx], tmprSmplData->tmprVal, amount*2);
         }
+
+        /*以下适用于水温后面跟库温的情况,,todo,,通用算法还待调整*/
         if (2 == tmprSmplAck->tmprSmplGrpAmt)
         {
+            u8 slotTmprOfst;
+
             tmprSmplData = (TmprSmplData *)(tmprSmplData->tmprVal+Align16(tmprSmplData->tmprSmplChnAmt));
+            slotTmprOfst = tmprSmpl->tmprAmt4Water;
+            if (0 != tmprSmpl->tmprAmt4Water)
+            {
+                if (tmprSmpl->genWaterTmprIdx < devMgr->waterTmprAmt)
+                {
+                    amount = devMgr->waterTmprAmt - tmprSmpl->genWaterTmprIdx;
+                    if (amount > tmprSmpl->tmprAmt4Water)
+                    {
+                        amount = tmprSmpl->tmprAmt4Water;
+                    }
+                    mem2Copy(&devMgr->genSlotWaterTmpr[tmprSmpl->genWaterTmprIdx], tmprSmplData->tmprVal, amount*2);
+                }
+            }
+
             if (tmprSmpl->genSlotTmprIdx < devMgr->slotTmprAmt)
             {
                 amount = devMgr->slotTmprAmt - tmprSmpl->genSlotTmprIdx;
-                if (amount > tmprSmplData->tmprSmplChnAmt)
+                if (amount > tmprSmpl->tmprAmt4Loc)
                 {
-                    amount = tmprSmplData->tmprSmplChnAmt;
+                    amount = tmprSmpl->tmprAmt4Loc;
                 }
-                mem2Copy(&devMgr->genSlotTmpr[tmprSmpl->genSlotTmprIdx], tmprSmplData->tmprVal, amount*2);
+                mem2Copy(&devMgr->genSlotTmpr[tmprSmpl->genSlotTmprIdx], tmprSmplData->tmprVal+slotTmprOfst, amount*2);
             }
         }
     }
@@ -704,8 +783,12 @@ void uartMsgSmplAck(Uart *uart, u8 actAddr, u8 *pld, u16 len)
         Tray *tray;
         NdbdData *ndbdData;
         NdbdMcuSmplAck *smplAck;
+        NdbdMcu *ndbdMcu;
         b8 trayBeTouchPre;
         b8 ndbdBeAutoPre;
+
+        ndbdMcu = &gDevMgr->ndbdMcu[uart->uartCrntSmplDevIdx];
+        ndbdMcu->smplExprCnt = 0;
 
         tray = &devMgr->tray[uart->uartStaAddr2DevIdx[UartNdbdMcu][actAddr]];
         ndbdData = &tray->ndbdData;
@@ -761,7 +844,7 @@ void uartMsgSmplAck(Uart *uart, u8 actAddr, u8 *pld, u16 len)
         }
         else if (trayBeTouchPre && 1!=ndbdData->status[NdbdStaTouch])  /*压合变脱开*/
         {
-            tray->protEnable = False;
+            tray->protDisable |= ProtDisableTouch;
             TimerStop(&tray->protEnaTmr);
             if (0 != tray->npMgr.closeBrkDelaySecT08)
             {
@@ -1108,10 +1191,112 @@ void uartMsgFixtLocatDisp(Uart *uart, u8 actAddr, u8 *pld, u16 len)
     return;
 }
 
+void uartMsgFixtSuckIn2SmplAck(Uart *uart, u8 actAddr, u8 *pld, u16 len)
+{
+    UartFixtSuckIn2SmplAck *uartAck;
+    UpFixtSuckIn2SmplAck *upAck;
+    UartBlockCmdBuf *blockBuf;
+    u8 *buf;
+
+    buf = sendUpBuf;
+    upAck = (UpFixtSuckIn2SmplAck *)(buf + sizeof(UpMsgHead));
+    uartAck = (UartFixtSuckIn2SmplAck *)pld;
+    blockBuf = uart->waitAckBlockBuf;
+    upAck->rspCode = uartAck->rspCode;
+    upAck->trayIdx = blockBuf->trayIdx;
+    upAck->hasRemain = uartAck->hasRemain;
+    upAck->topUpPos = uartAck->topUpPos;
+    gUpItfCb->upMsgFlowSeq = blockBuf->upMsgFlowSeq;
+    sendUpMsg(buf, sizeof(UpFixtSuckIn2SmplAck), UpCmdIdFixtSuctIn2Smpl);
+    return;
+}
+
+void uartMsgFixtSuctIn2Disp(Uart *uart, u8 actAddr, u8 *pld, u16 len)
+{
+    UartCmmnAck *tmpAck;
+    u8eUartMsgId msgId;
+
+    tmpAck = (UartCmmnAck *)pld;
+    msgId = tmpAck->msgId - UartMsgIdSpecBase;
+    if (msgId < UartMsgFixtSuckIn2Cri)
+    {
+        gUartMgr->uartFixtSuckIn2MsgProc[msgId](uart, actAddr, pld, len);
+    }
+    return;
+}
+
+void uartMsgFixtSuckOut2SmplAck(Uart *uart, u8 actAddr, u8 *pld, u16 len)
+{
+    UartFixtSuckOut2SmplAck *uartAck;
+    UpFixtSuckOut2SmplAck *upAck;
+    UartBlockCmdBuf *blockBuf;
+    u8 *buf;
+
+    buf = sendUpBuf;
+    upAck = (UpFixtSuckOut2SmplAck *)(buf + sizeof(UpMsgHead));
+    uartAck = (UartFixtSuckOut2SmplAck *)pld;
+    blockBuf = uart->waitAckBlockBuf;
+    upAck->rspCode = uartAck->rspCode;
+    upAck->trayIdx = blockBuf->trayIdx;
+    upAck->hasRemain = uartAck->hasRemain;
+    upAck->topUpPos = uartAck->topUpPos;
+    upAck->state = uartAck->state;
+    gUpItfCb->upMsgFlowSeq = blockBuf->upMsgFlowSeq;
+    sendUpMsg(buf, sizeof(UpFixtSuckOut2SmplAck), UpCmdIdFixtSuctOut2Smpl);
+    return;
+}
+
+void uartMsgFixtSuctOut2Disp(Uart *uart, u8 actAddr, u8 *pld, u16 len)
+{
+    UartCmmnAck *tmpAck;
+    u8eUartMsgId msgId;
+
+    tmpAck = (UartCmmnAck *)pld;
+    msgId = tmpAck->msgId - UartMsgIdSpecBase;
+    if (msgId < UartMsgFixtSuckOut2Cri)
+    {
+        gUartMgr->uartFixtSuckOut2MsgProc[msgId](uart, actAddr, pld, len);
+    }
+    return;
+}
+
+void uartMsgFixtLocat2SmplAck(Uart *uart, u8 actAddr, u8 *pld, u16 len)
+{
+    UartFixtLocat2SmplAck *uartAck;
+    UpFixtLocat2SmplAck *upAck;
+    UartBlockCmdBuf *blockBuf;
+    u8 *buf;
+
+    buf = sendUpBuf;
+    upAck = (UpFixtLocat2SmplAck *)(buf + sizeof(UpMsgHead));
+    uartAck = (UartFixtLocat2SmplAck *)pld;
+    blockBuf = uart->waitAckBlockBuf;
+    upAck->rspCode = uartAck->rspCode;
+    upAck->trayIdx = blockBuf->trayIdx;
+    upAck->unlockSucc = uartAck->unlockSucc;
+    upAck->locatPos = uartAck->locatPos;
+    upAck->topUpPos = uartAck->topUpPos;
+    gUpItfCb->upMsgFlowSeq = blockBuf->upMsgFlowSeq;
+    sendUpMsg(buf, sizeof(UpFixtLocat2SmplAck), UpCmdIdFixtLocat2Smpl);
+    return;
+}
+
+void uartMsgFixtLocat2Disp(Uart *uart, u8 actAddr, u8 *pld, u16 len)
+{
+    UartCmmnAck *tmpAck;
+    u8eUartMsgId msgId;
+
+    tmpAck = (UartCmmnAck *)pld;
+    msgId = tmpAck->msgId - UartMsgIdSpecBase;
+    if (msgId < UartMsgFixtLocat2Cri)
+    {
+        gUartMgr->uartFixtLocat2MsgProc[msgId](uart, actAddr, pld, len);
+    }
+    return;
+}
+
 void uartRxMsg(u8 port, u8 *msg, u16 len)
 {
-	/*485消息处理入口*/
-
     Uart *uart;
     UartMsgHead *uartHead;
     UartCmmnAck *tmpAck;
@@ -1191,6 +1376,9 @@ void uartInit()
     mgr->uartAddrBase[UartFixtSuctOut] = UartAddrBaseFixtSuctOut;
     mgr->uartAddrBase[UartFixtLocat] = UartAddrBaseFixtLocat;
     mgr->uartAddrBase[UartFixtFlow] = UartAddrBaseFixtFlow;
+    mgr->uartAddrBase[UartFixtSuctIn2] = UartAddrBaseFixtSuctIn2;
+    mgr->uartAddrBase[UartFixtSuctOut2] = UartAddrBaseFixtSuctOut2;
+    mgr->uartAddrBase[UartFixtLocat2] = UartAddrBaseFixtLocat2;
 
     mgr->upFixt2UartType[UpFixtTypePrecSeries] = UartFixtPrecSeries;
     mgr->upFixt2UartType[UpFixtTypeTmpr] = UartFixtTmpr;
@@ -1201,6 +1389,9 @@ void uartInit()
     mgr->upFixt2UartType[UpFixtTypeSuctOut] = UartFixtSuctOut;
     mgr->upFixt2UartType[UpFixtTypeLocat] = UartFixtLocat;
     mgr->upFixt2UartType[UpFixtTypePrecParal] = UartFixtPrecParal;
+    mgr->upFixt2UartType[UpFixtTypeSuctIn2] = UartFixtSuctIn2;
+    mgr->upFixt2UartType[UpFixtTypeSuctOut2] = UartFixtSuctOut2;
+    mgr->upFixt2UartType[UpFixtTypeLocat2] = UartFixtLocat2;
 
     for (idx=UartTmprSmpl; idx<UartNeedSmplCri; idx++)
     {
@@ -1236,6 +1427,9 @@ void uartInit()
     mgr->uartSpecMsgDisp[UartFixtSuctIn] = uartMsgFixtSuctInDisp;
     mgr->uartSpecMsgDisp[UartFixtSuctOut] = uartMsgFixtSuctOutDisp;
     mgr->uartSpecMsgDisp[UartFixtLocat] = uartMsgFixtLocatDisp;
+    mgr->uartSpecMsgDisp[UartFixtSuctIn2] = uartMsgFixtSuctIn2Disp;
+    mgr->uartSpecMsgDisp[UartFixtSuctOut2] = uartMsgFixtSuctOut2Disp;
+    mgr->uartSpecMsgDisp[UartFixtLocat2] = uartMsgFixtLocat2Disp;
 
     for (idx=UartMsgNdbdMcuCtrl; idx<UartMsgNdbdMcuCri; idx++)
     {
@@ -1295,6 +1489,27 @@ void uartInit()
     }
     mgr->uartFixtLocatMsgProc[UartMsgFixtLocatSmpl] = uartMsgFixtLocatSmplAck;
     mgr->uartFixtLocatMsgProc[UartMsgFixtLocatAct] = uartMsgFixtCmmnAck;
+
+    for (idx=UartMsgFixtSuckIn2Smpl; idx<UartMsgFixtSuckIn2Cri; idx++)
+    {
+        mgr->uartFixtSuckIn2MsgProc[idx] = (UartMsgProc)uartMsgIgnore;
+    }
+    mgr->uartFixtSuckIn2MsgProc[UartMsgFixtSuckIn2Smpl] = uartMsgFixtSuckIn2SmplAck;
+    mgr->uartFixtSuckIn2MsgProc[UartMsgFixtSuckIn2Act] = uartMsgFixtCmmnAck;
+
+    for (idx=UartMsgFixtSuckOut2Smpl; idx<UartMsgFixtSuckOut2Cri; idx++)
+    {
+        mgr->uartFixtSuckOut2MsgProc[idx] = (UartMsgProc)uartMsgIgnore;
+    }
+    mgr->uartFixtSuckOut2MsgProc[UartMsgFixtSuckOut2Smpl] = uartMsgFixtSuckOut2SmplAck;
+    mgr->uartFixtSuckOut2MsgProc[UartMsgFixtSuckOut2Act] = uartMsgFixtCmmnAck;
+
+    for (idx=UartMsgFixtLocat2Smpl; idx<UartMsgFixtLocat2Cri; idx++)
+    {
+        mgr->uartFixtLocat2MsgProc[idx] = (UartMsgProc)uartMsgIgnore;
+    }
+    mgr->uartFixtLocat2MsgProc[UartMsgFixtLocat2Smpl] = uartMsgFixtLocat2SmplAck;
+    mgr->uartFixtLocat2MsgProc[UartMsgFixtLocat2Act] = uartMsgFixtCmmnAck;
 
     for (uart=gDevMgr->uart; uart<&gDevMgr->uart[gDevMgr->uartAmt]; uart++)
     {

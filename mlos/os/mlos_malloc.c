@@ -7,7 +7,7 @@
  * 内容简介:
  *
  ******************************************************************************
- *  					文件历史
+ *                      文件历史
  *
  * 版本号-----  日期   -----   作者    ------   说明
  * v0.1                       2014-12-01          zzx                 创建该文件
@@ -56,7 +56,7 @@ _private List memBlockList;
 ListPtr mlos_mem_list(void)
 {
 
-	return &memBlockList;
+    return &memBlockList;
 }
 
 //-----------------------------------------------------------------------------
@@ -78,17 +78,17 @@ ListPtr mlos_mem_list(void)
 void mlos_mem_statistics(void)
 {
 
-	MemBlockPtr pMemBlock;
-	mlos.memSize=0;//内存总大小
-	mlos.usedMemSize=0;//已使用的内存大小
-	pMemBlock=memBlockList.head;
-	while (nullptr!=pMemBlock)
-	{
-		mlos.memSize+=pMemBlock->size;//内存总大小
-		mlos.usedMemSize+=pMemBlock->nextFreebyte;//已使用的内存大小
-		pMemBlock=pMemBlock->pnext;
-	}
-		
+    MemBlockPtr pMemBlock;
+    mlos.memSize=0;//内存总大小
+    mlos.usedMemSize=0;//已使用的内存大小
+    pMemBlock=memBlockList.head;
+    while (nullptr!=pMemBlock)
+    {
+        mlos.memSize+=pMemBlock->size;//内存总大小
+        mlos.usedMemSize+=pMemBlock->nextFreebyte;//已使用的内存大小
+        pMemBlock=pMemBlock->pnext;
+    }
+        
 }
 
 //-----------------------------------------------------------------------------
@@ -109,53 +109,53 @@ void mlos_mem_statistics(void)
 //-----------------------------------------------------------------------------
 void* mlos_malloc(MemoryType mt,mlu32 size)
 {
-	mlu32 alignment;
-	void * pFreeMem;
-	MemBlockPtr pMemBlock;
-	
-	//字节对齐,取内存
-	alignment= (size & BYTE_ALIGNMENT_MASK);
-	if( alignment != 0 )
-	{
-		size += ( ARCH_BYTE_ALIGNMENT - alignment );
-	}
+    mlu32 alignment;
+    void * pFreeMem;
+    MemBlockPtr pMemBlock;
+    
+    //字节对齐,取内存
+    alignment= (size & BYTE_ALIGNMENT_MASK);
+    if( alignment != 0 )
+    {
+        size += ( ARCH_BYTE_ALIGNMENT - alignment );
+    }
 
-	pFreeMem=nullptr;
-	
-	//选择ram
-	pMemBlock=memBlockList.head;
-	while (nullptr!=pMemBlock)
-	{
-		//内存块类型
-		if(mt==pMemBlock->type)
-		{
-			//内存空间判断
-			if((pMemBlock->nextFreebyte+size)<pMemBlock->size)
-			{
-				//计算偏移
-				pFreeMem=pMemBlock->mem+pMemBlock->nextFreebyte;
-				pMemBlock->nextFreebyte+=size;
-				break;
-			}
-		}
-		pMemBlock=pMemBlock->pnext;
-	}
-	
-	//内存不够，设置断点
-	while (nullptr==pFreeMem)
-	{
-		//
-		alignment=pMemBlock->nextFreebyte+size-pMemBlock->size;
-	}
+    pFreeMem=nullptr;
+    
+    //选择ram
+    pMemBlock=memBlockList.head;
+    while (nullptr!=pMemBlock)
+    {
+        //内存块类型
+        if(mt==pMemBlock->type)
+        {
+            //内存空间判断
+            if((pMemBlock->nextFreebyte+size)<pMemBlock->size)
+            {
+                //计算偏移
+                pFreeMem=pMemBlock->mem+pMemBlock->nextFreebyte;
+                pMemBlock->nextFreebyte+=size;
+                break;
+            }
+        }
+        pMemBlock=pMemBlock->pnext;
+    }
+    
+    //内存不够，设置断点
+    while (nullptr==pFreeMem)
+    {
+        //
+        alignment=pMemBlock->nextFreebyte+size-pMemBlock->size;
+    }
 
-	//统计内存使用情况
-	mlos_mem_statistics();
+    //统计内存使用情况
+    mlos_mem_statistics();
 
-	//初始化内存块
-	memset(pFreeMem,0,size);
-	
-	return pFreeMem;
-	
+    //初始化内存块
+    memset(pFreeMem,0,size);
+    
+    return pFreeMem;
+    
 }
 
 
@@ -180,24 +180,24 @@ void* mlos_malloc(MemoryType mt,mlu32 size)
 mlu8  mlos_mem_mount(MemBlockPtr mb)
 {
 
-	//参数检查
-	if(nullptr==mb||nullptr==mb->mem||0==mb->size)
-	{
-		return 1;
-	}
+    //参数检查
+    if(nullptr==mb||nullptr==mb->mem||0==mb->size)
+    {
+        return 1;
+    }
 
-	//
-	mb->nextFreebyte=0;
-	mb->pnext=nullptr;
+    //
+    mb->nextFreebyte=0;
+    mb->pnext=nullptr;
 
-	list_append(&memBlockList,mb);
+    list_append(&memBlockList,mb);
 
-	//mem chek
-	//mlos_mem_check();
-	//计算 内存总大小 byte
-	
-	return 0;
-	
+    //mem chek
+    //mlos_mem_check();
+    //计算 内存总大小 byte
+    
+    return 0;
+    
 }
 
 
@@ -220,16 +220,16 @@ mlu8  mlos_mem_mount(MemBlockPtr mb)
 void mlos_mem_init(void)
 {
 
-	//单向链表管理内存块
-	list_init(&memBlockList, e_lst_sortUnordered, e_lst_linkSingly);
+    //单向链表管理内存块
+    list_init(&memBlockList, e_lst_sortUnordered, e_lst_linkSingly);
 
-	//根据不同的mcu，分配ram，挂载到系统
-	port_mem_init();
-	
+    //根据不同的mcu，分配ram，挂载到系统
+    port_mem_init();
+    
 }
 
 //----------------------------------------------------------------------------
-//							end  of file
+//                          end  of file
 //----------------------------------------------------------------------------
 
 

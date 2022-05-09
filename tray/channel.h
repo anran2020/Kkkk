@@ -25,15 +25,19 @@ typedef struct
 extern "C"  {
 #endif
 
+extern void cellEnterIdle(Cell *cell);
 extern void chnEnterIdle(Channel *chn);
 extern void chnStepSwPre(Channel *chn);
 extern void chnLowSmplProc(Channel *chn, void *upSmpl, void *lowSmpl);
-extern void ChnInit(void);
+extern void chnInit(void);
 extern u8eUpChnState chnStaMapMed2Up(Channel *chn);
 extern void chnStopByProt(Channel *chn, b8 beTrayProt);
-extern b8 chnBeInRun(Channel *chn);
-extern u8eChgType getChgType(Channel *chn, u8 stepId);
+extern b8 chnBeInIdle(Channel *chn, ChnProtBuf *protBuf);
+extern b8 chnBeInRun(Channel *chn, ChnProtBuf *protBuf);
+extern u8eChgType stepType2ChgType(u8eStepType stepType);
 extern void chnProtBufInit(ChnProtBuf *chnProtBuf);
+extern void chnSaveTraySmplOld(Channel *chn, u16eCauseCode cause);
+extern void chnEndCapCalc(Channel *chn);
 
 #ifdef __cplusplus
 }

@@ -66,11 +66,12 @@ extern void mem2Copy(u16 *dst, u16 *src, u16 amt);
 extern s8 *strStrip(s8 *str, u16 len, s8 *dst);
 extern Ret arrayParse(s8 *src, u8 *dst, u8 arrAmt, u8 *itemAmt);
 extern Ret expInfix2Suffix(u8 *infix, u8 *infixCri, u8 numCri, s8 *suffix, s8 *suffixCri, u8 *suffixLen);
-extern Ret expSuffixCalc(u8 *suffix, u8 suffixLen, u32 elemVal, u8 *result);
+extern Ret expSuffixCalc(u8 *suffix, u8 suffixLen, u32 elemVal, u32 *result);
 extern void *strTokSetup(s8 *str, s8 ch);
 extern s8 *strTokGet(void *handle);
 extern void strTokRel(void *handle);
 extern Ret strToHex(s8 *str, u32 *hex);
+extern u32 chkSum32(u32 *buf, u16 len);
 
 #ifdef __cplusplus
 }

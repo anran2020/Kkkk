@@ -1,4 +1,4 @@
-bo
+
 
 #ifndef _CAUSE_H_
 #define _CAUSE_H_
@@ -31,8 +31,24 @@ typedef u16 u16eRspCode;
 #define RspDiscNdbd 0x0110  /*针床设备不在线*/
 #define RspChnBeRun 0x0111  /*通道运行中*/
 #define RspNdbdMntn 0x0112  /*针床维护中*/
-#define RspTrayEnter 0x0113  /*库位无托盘*/
+#define RspResAbnml 0x0113  /*异常错误*/
 #define RspChnIdx 0x0114  /*通道号错误*/
+#define RspStepFst 0x0115  /*工步首包错误*/
+#define RspProtFst 0x0116  /*保护首包错误*/
+#define RspMultiSeq 0x0117  /*多包序号错误*/
+#define RspFlow 0x0118  /*流程不完整*/
+#define RspChnWiRun 0x0119  /*主通道忙*/
+#define RspChnWoRun 0x011a  /*主通道未运行*/
+#define RspRgbCtrl 0x011b  /*三色灯指示错误*/
+#define RspUnknown 0x011c  /*不识别信息*/
+#define RspRepeatDrop 0x011d  /*重发报文,不算错误*/
+#define RspMissInfo 0x011e  /*必选信息缺失*/
+#define RspMissFlow 0x011f  /*保护通道缺少流程*/
+#define RspRepeatParam 0x0120  /*信息重复*/
+#define RspLoopAmt 0x0121  /*循环工步超限*/
+#define RspLoopParam 0x0122  /*循环参数错误*/
+#define RspDiskRead 0x0123  /*读磁盘错误*/
+#define RspWoMntn 0x0124  /*不在维护状态*/
 /*---------------响应码，结束-----------------*/
 
 
@@ -87,6 +103,7 @@ do \
 #define Cc1CellTmprBad 0x0801  /*温度无效--温度盒断线*/
 #define Cc1LowProto 0x0802  /*下位机协议不匹配*/
 #define Cc1Reverse 0x0803  /*反接保护*/
+#define Cc1MedReset 0x0804  /*中位机重启*/
 #define Cc1QuietCurLeak 0x0805  /**/
 #define Cc1StepQuietVolUpLmt 0x0806  /**/
 #define Cc1StepQuietVolLowLmt 0x0807  /**/
@@ -104,9 +121,9 @@ do \
 #define Cc1CccVolRiseCtnu 0x0813  /**/
 #define Cc1CccVolDownCtnu 0x0814  /**/
 #define Cc1CcdVolIntvlFluctLowLmt 0x0815  /**/
-#define Cc1CvcVolOfst 0x0816  /**/
-#define Cc1CvcCurRiseAbnm 0x0817  /**/
-#define Cc1CvcCurBigRise 0x0818  /**/
+#define Cc1CvcVolOfst 0x0816  /*恒压充电电压超差*/
+#define Cc1CvcCurRiseAbnm 0x0817  /*恒压充电电流上升异常点*/
+#define Cc1CvcCurBigRise 0x0818  /*恒压充电电流突升*/
 #define Cc1QuietVolChkBack 0x0819  /*电压回检即电流电芯双压差*/
 #define Cc1QuietVolFluct 0x081a  /**/
 #define Cc1StepCccChnTmprBigRise 0x081b  /**/
@@ -141,6 +158,11 @@ do \
 #define Cc1LowStartExpr 0x0838  /*工步启动超时*/
 #define Cc1LowEndExpr 0x0839  /*工步停止超时*/
 #define Cc1LowAbnmlEnd 0x083a  /*运行中异常截止*/
+#define Cc1BoxOffline 0x083b  /*离线异常*/
+#define Cc1ChnNoData 0x083c  /*通道无数据*/
+#define Cc1DvVolOfst 0x083d  /*恒压放电电压超差*/
+#define Cc1DvCurRiseAbnm 0x083e  /*恒压放电电流上升异常点*/
+#define Cc1DvCurBigRise 0x083f  /*恒压放电电流突升*/
 
 /*(非因子)通道保护,但涉全盘,优先级高于前者*/
 #define Cc2BusyChnTmprLowLmt 0x0a01  /*忙时通道温度下限*/

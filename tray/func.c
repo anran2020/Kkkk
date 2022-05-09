@@ -178,6 +178,25 @@ u16 crc16Modbus(u8 *buf, u16 len)
 }
 #endif
 
+/*计算32位的异或校验和,非4对齐则尾巴补零*/
+u32 chkSum32(u32 *buf, u16 len)
+{
+    u32 chkSum;
+    u32 *sentry;
+
+    for (chkSum=0,sentry=buf+len/4; buf<sentry; buf++)
+    {
+        chkSum ^= *buf;
+    }
+
+    if (len%4)
+    {
+        chkSum ^= *buf << (4-len%4)*8;
+    }
+
+    return chkSum;
+}
+
 void outHex(u8 *ptr, u16 len)
 {
 	u16 line, left, pos;
@@ -226,7 +245,7 @@ void outHex(u8 *ptr, u16 len)
 	return;
 }
 
-/*只做以2对齐的4字节整数拷贝,其它勿用.box只做了2对齐,针对一下*/
+/*只做以2对齐的拷贝,其它勿用.box只做了2对齐,针对一下*/
 /*len--字节长度*/
 void mem2Copy(u16 *dst, u16 *src, u16 len)
 {
@@ -863,7 +882,9 @@ endHandler:
 /*根据数组计算后缀表达式结果*/
 /*suffix:表达式,其中的操作数是数组下标*/
 /*elemVal:输入数组*/
-Ret expSuffixCalc(u8 *suffix, u8 suffixLen, u32 elemVal, u8 *result)
+/*mixHpn:用于输出结果,零表示无组合发生,低24bit分4组表示为真的因子id*/
+/*       组数不够4则用全1填充,优先用低bit组*/
+Ret expSuffixCalc(u8 *suffix, u8 suffixLen, u32 elemVal, u32 *mixHpnVal)
 {
     Stack *stack;
     u8 *suffixCri;
@@ -871,15 +892,17 @@ Ret expSuffixCalc(u8 *suffix, u8 suffixLen, u32 elemVal, u8 *result)
     u8 right;
     u8 opr;
     u8 ret;
+    u8 happen;
+    u8 cnt;
 
     if (NULL == (stack=stackSetup(256)))
     {
         return Nok;
     }
 
-    for (ret=Nok,suffixCri=suffix+suffixLen; suffix<suffixCri; suffix++)
+    for (*mixHpnVal=0,cnt=0,ret=Nok,suffixCri=suffix+suffixLen; suffix<suffixCri; suffix++)
     {
-        if (*suffix > 128)
+        if (*suffix > 128)  /*运算符*/
         {
             if (!stackPop(stack, &right) || !stackPop(stack, &left))
             {
@@ -901,21 +924,38 @@ Ret expSuffixCalc(u8 *suffix, u8 suffixLen, u32 elemVal, u8 *result)
                 goto endHandler;
             }
         }
-        else
+        else  /*操作数*/
         {
             if (Ok != stackPush(stack, BitVal(elemVal, *suffix)))
             {
                 goto endHandler;
             }
+
+            if (BitVal(elemVal, *suffix) && cnt<4)
+            {
+                *mixHpnVal += *suffix << cnt*6;
+                cnt++;
+            }
         }
     }
 
-    if (!stackPop(stack, result) || stackPop(stack, &left))
+    if (!stackPop(stack, &happen) || stackPop(stack, &left))
     {
         goto endHandler;
     }
 
     ret = Ok;
+    if (happen)
+    {
+        for (; cnt<4; cnt++)  /*不够4组则用全1填充*/
+        {
+            *mixHpnVal += 0x3f << cnt*6;
+        }
+    }
+    else
+    {
+        *mixHpnVal = 0;
+    }
 endHandler:
     stackRel(stack);
     return ret;

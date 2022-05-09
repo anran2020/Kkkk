@@ -22,11 +22,21 @@
 #include "tray.h"
 #include "channel.h"
 
+#ifdef DebugVersion
+#else
+#include "cs_sdcard.h"
+#endif
+
 void tmprGetSingle(u16 *tmpr, u8 tmprAmt, TmprData *tmprRcd)
 {
     u16 *tmprCri;
 
     tmprRcd->tmprBeValid = False;
+    if (0 == tmprAmt)
+    {
+        return;
+    }
+
     for (tmprCri=tmpr+tmprAmt; tmpr<tmprCri; tmpr++)
     {
         if (*tmpr<TmprValidMin || *tmpr>TmprValidMax)
@@ -99,7 +109,10 @@ void traySmplSetProtAux(Tray *tray)
     {
         trayProtMgr->newCoWarn = ndbdData->warn[NdbdWarnCo];
         trayProtMgr->newSmokeWarn = ndbdData->warn[NdbdWarnSmoke];
+        trayProtMgr->newGasWarn = ndbdData->warn[NdbdWarnGas];
+        trayProtMgr->newFanWarn = ndbdData->warn[NdbdWarnFan];
         trayProtMgr->newNdbdNp = ndbdData->status[NdbdSenNpVal];
+        trayProtMgr->newNdbdNpTs = ndbdData->ndbdSmplTsSec;
     }
 
     return;
@@ -110,25 +123,24 @@ void traySmplSetAuxSmpl(Tray *tray)
 {
     TraySmpl *traySmpl;
     TrayNdbdSmpl *trayNdbdSmpl;
+    NdbdDynData *dynData;
     NdbdData *ndbdData;
-    u16 *cellTmpr;
-    u16 *cellTmprSrc;
     u16 idx;
-    u8 cnt;
 
     traySmpl = ((TraySmplRcd *)tray->smplMgr.smplBufAddr)->traySmpl;
     traySmpl = (TraySmpl *)&traySmpl->chnSmpl[tray->genChnAmt];
     traySmpl->smplType = TraySmplNdbd;
-    traySmpl->smplSize = sizeof(TrayNdbdSmpl); /*下面还要追加温度长度*/
+    traySmpl->smplSize = sizeof(TrayNdbdSmpl); /*下面还要追加动态数据长度*/
     traySmpl->smplAmt = 1;
 
     ndbdData = &tray->ndbdData;
     trayNdbdSmpl = traySmpl->ndbdSmpl;
     trayNdbdSmpl->enterState = ndbdData->status[NdbdStaEnter];
     trayNdbdSmpl->touchState = ndbdData->status[NdbdStaTouch];
+    trayNdbdSmpl->cylinderWarn = ndbdData->warn[NdbdWarnCylinder];
+    trayNdbdSmpl->smokeWarn = ndbdData->warn[NdbdWarnSmoke];
     trayNdbdSmpl->npVal = ndbdData->status[NdbdSenNpVal];
     trayNdbdSmpl->ratioAnalog = ndbdData->status[NdbdSenRatioVal];
-    trayNdbdSmpl->cellTmprAmt = tray->trayCellAmt * ndbdData->tmprAmtPerCell;
     trayNdbdSmpl->bitmapState = 0;
     trayNdbdSmpl->bitmapAlarm = 0;
     for (idx=0; idx<BitSenCri; idx++)
@@ -146,35 +158,58 @@ void traySmplSetAuxSmpl(Tray *tray)
         }
     }
 
-    trayNdbdSmpl->cylinderWarn = ndbdData->warn[NdbdWarnCylinder];
-    trayNdbdSmpl->smokeWarn = ndbdData->warn[NdbdWarnSmoke];
-    trayNdbdSmpl->slotTmprAmt = ndbdData->slotTmprAmt;
-    trayNdbdSmpl->tmprAmtPerCell = ndbdData->tmprAmtPerCell;
-    for (idx=0; idx<ndbdData->slotTmprAmt; idx++)
+    dynData = trayNdbdSmpl->dynData;
+    if (0 != ndbdData->tmprAmtPerCell)  /*电芯温度*/
     {
-        trayNdbdSmpl->slotTmpr[idx] = ndbdData->slotTmpr[idx];
+        u16 *tmprDst;
+        u16 *tmprSrc;
+
+        dynData->dataType = NdbdDynCellTmpr;
+        dynData->rsvd = 0;
+        dynData->dataLen = tray->trayCellAmt * ndbdData->tmprAmtPerCell * sizeof(u16);
+        tmprDst = (u16 *)dynData->data;
+        if (NULL == tray->cell)  /*并联*/
+        {
+            for (idx=0; idx<tray->trayChnAmt; idx++)
+            {
+                tmprSrc = &ndbdData->cellTmpr[tray->chn[idx].tmprIdx*ndbdData->tmprAmtPerCell];
+                mem2Copy(tmprDst, tmprSrc, ndbdData->tmprAmtPerCell*sizeof(u16));
+                tmprDst += ndbdData->tmprAmtPerCell;
+            }
+        }
+        else
+        {
+            for (idx=0; idx<tray->trayCellAmt; idx++)
+            {
+                tmprSrc = &ndbdData->cellTmpr[tray->cell[idx].tmprIdx*ndbdData->tmprAmtPerCell];
+                mem2Copy(tmprDst, tmprSrc, ndbdData->tmprAmtPerCell*sizeof(u16));
+                tmprDst += ndbdData->tmprAmtPerCell;
+            }
+        }
+
+        traySmpl->smplSize += sizeof(NdbdDynData) + Align8(dynData->dataLen);
+        dynData = (NdbdDynData *)((u8 *)dynData + sizeof(NdbdDynData) + Align8(dynData->dataLen));
     }
 
-    cellTmpr = trayNdbdSmpl->slotTmpr + Align16(ndbdData->slotTmprAmt);
-    if (NULL == tray->cell)  /*并联*/
+    if (0 != ndbdData->slotTmprAmt)  /*库位环境温度*/
     {
-        for (idx=0; idx<tray->trayChnAmt; idx++)
-        {
-            cellTmprSrc = &ndbdData->cellTmpr[tray->chn[idx].tmprIdx*ndbdData->tmprAmtPerCell];
-            mem2Copy(cellTmpr, cellTmprSrc, ndbdData->tmprAmtPerCell*sizeof(u16));
-            cellTmpr += ndbdData->tmprAmtPerCell;
-        }
+        dynData->dataType = NdbdDynSlotTmpr;
+        dynData->rsvd = 0;
+        dynData->dataLen = ndbdData->slotTmprAmt * sizeof(u16);
+        mem2Copy((u16 *)dynData->data, ndbdData->slotTmpr, dynData->dataLen);
+        traySmpl->smplSize += sizeof(NdbdDynData) + Align8(dynData->dataLen);
+        dynData = (NdbdDynData *)((u8 *)dynData + sizeof(NdbdDynData) + Align8(dynData->dataLen));
     }
-    else
+
+    if (0 != ndbdData->slotWaterTmprAmt)  /*库位水箱温度*/
     {
-        for (idx=0; idx<tray->trayCellAmt; idx++)
-        {
-            cellTmprSrc = &ndbdData->cellTmpr[tray->cell[idx].tmprIdx*ndbdData->tmprAmtPerCell];
-            mem2Copy(cellTmpr, cellTmprSrc, ndbdData->tmprAmtPerCell*sizeof(u16));
-            cellTmpr += ndbdData->tmprAmtPerCell;
-        }
+        dynData->dataType = NdbdDynWaterTmpr;
+        dynData->rsvd = 0;
+        dynData->dataLen = ndbdData->slotWaterTmprAmt * sizeof(u16);
+        mem2Copy((u16 *)dynData->data, ndbdData->slotWaterTmpr, dynData->dataLen);
+        traySmpl->smplSize += sizeof(NdbdDynData) + Align8(dynData->dataLen);
+        dynData = (NdbdDynData *)((u8 *)dynData + sizeof(NdbdDynData) + Align8(dynData->dataLen));
     }
-    traySmpl->smplSize += sizeof(u16) * Align16(cellTmpr-trayNdbdSmpl->slotTmpr);
     return;
 }
 
@@ -193,6 +228,7 @@ void traySmplSetAux(Tray *tray)
 }
 
 /*上位机任何操作负压,都复位负压管理*/
+/*简单粗暴有效但不细致,,todo,,可更换机制*/
 void trayNpReset(u8 trayIdx)
 {
     Tray *tray;
@@ -253,7 +289,7 @@ void trayNpRatioSet(u8 trayIdx, u8eNpOprCode npOpr, u8 swVal, s16 npVal)
         if (NpOprRatioBrkVacum == npOpr)  /*破真空*/
         {
             plcRegWriteTry(trayIdx, NdbdSetBrkVacum, 1);
-            plcRegWriteTry(trayIdx, NdbdSetSwValve, 1);
+            plcRegWriteTry(trayIdx, NdbdSetSwValve, 0);
             plcRegWriteTry(trayIdx, NdbdSetRatioVal, 0);
         }
         else if (NpOprRatioMkVacum == npOpr)  /*抽真空*/
@@ -309,30 +345,15 @@ void trayNpSwProtDelay(Timer *timer)
     return;
 }
 
-b8 trayChkStepNpSame(Channel *chn, u8 stepIdPre, u8 stepIdNew)
-{
-    StepNpReq *stepNpReqPre;
-    StepNpReq *stepNpReqNew;
-
-    stepNpReqPre = (StepNpReq *)(gTmpStepNpInfo[chn->box->tray->trayIdx] + sizeof(StepNpReq)*stepIdPre);
-    stepNpReqNew = (StepNpReq *)(gTmpStepNpInfo[chn->box->tray->trayIdx] + sizeof(StepNpReq)*stepIdNew);
-    if (stepNpReqNew->npType == stepNpReqPre->npType
-        && stepNpReqNew->stepNpExpect == stepNpReqPre->stepNpExpect)
-    {
-        return True;
-    }
-
-    return False;
-}
-
 /*todo,暂时不匹配类型,以后高低负压时要加*/
-Ret trayNpChnAlloc(Tray *tray, Channel *chn, u8 stepId)
+/*Ok--直接跑,Nok--等待*/
+Ret trayNpChnAlloc(Tray *tray, Channel *chn)
 {
     TrayNpMgr *npMgr;
-    StepNpReq *stepNpReq;
+    StepNpCfg *stepNpReq;
 
-    stepNpReq = (StepNpReq *)(gTmpStepNpInfo[tray->trayIdx] + sizeof(StepNpReq)*stepId);
-    if (NpTypeNone == stepNpReq->npType)
+    stepNpReq = chn->crntStepNode->stepNpCfg;
+    if (NULL==stepNpReq || NpTypeNone==stepNpReq->npType)
     {
         return Ok;
     }
@@ -389,7 +410,7 @@ void trayNpChnFree(Tray *tray, Channel *chn)
     if (0 == npMgr->refCnt)
     {
         npMgr->npType = NpTypeNone;
-        if (CcNone == tray->trayProtMgr.trayCauseNew)  /*todo,换一下逻辑,这里不合适*/
+        if (CcNone == tray->trayProtMgr.trayCauseNew)  /*todo,逻辑可以考虑挪出*/
         {
             Channel *chn;
             Channel *chnCri;
@@ -398,7 +419,7 @@ void trayNpChnFree(Tray *tray, Channel *chn)
             {
                 if (ChnStaNpWait == chn->chnStateMed)
                 {
-                    trayNpChnAlloc(tray, chn, chn->stepIdTmp);
+                    trayNpChnAlloc(tray, chn);
                 }
             }
         }
@@ -407,11 +428,31 @@ void trayNpChnFree(Tray *tray, Channel *chn)
     return;
 }
 
+/*工步切换时重新申请负压,Ok--直接跑,Nok--等待*/
+Ret trayNpChnReAlloc(Tray *tray, Channel *chn)
+{
+    TrayNpMgr *npMgr;
+    StepNpCfg *stepNpReq;
+
+    stepNpReq = chn->crntStepNode->stepNpCfg;
+    npMgr = &tray->npMgr;
+    if (chn->beWiNp)
+    {
+        if (npMgr->npType==stepNpReq->npType && npMgr->npExpect==stepNpReq->stepNpExpect)
+        {
+            return Ok;
+        }
+
+        trayNpChnFree(tray, chn);
+    }
+
+    return trayNpChnAlloc(tray, chn);
+}
+
 void trayNpReachNtfy(Tray *tray)
 {
     Channel *chn;
     Channel *chnCri;
-    StepNpReq *stepNpReq;
     TrayNpMgr *npMgr;
     Box *box;
     Box *boxCri;
@@ -419,7 +460,6 @@ void trayNpReachNtfy(Tray *tray)
     npMgr = &tray->npMgr;
     for (chn=tray->chn,chnCri=&tray->chn[tray->trayChnAmt]; chn<chnCri; chn++)
     {
-        stepNpReq = (StepNpReq *)(gTmpStepNpInfo[tray->trayIdx] + sizeof(StepNpReq)*chn->stepIdTmp);
         if (ChnStaNpWait==chn->chnStateMed && chn->beWiNp)
         {
             boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStart);
@@ -467,9 +507,11 @@ void trayNpReachChk(Tray *tray)
     {
         npMgr->beReach = True;
         npMgr->npOverLmtTimeStampSec = 0;
+        trayNpBigRiseRst(tray);
         trayNpReachNtfy(tray);
-        return;
     }
+
+    return;
 }
 
 /*随时调用*/
@@ -584,6 +626,7 @@ void trayIgnoreNdbd()
         {
             trayProtEnable(&tray->protEnaTmr);  /*使能保护*/
             tray->ndbdData.status[NdbdStaWorkMode] = 0; /*自动,允许启动*/
+            tray->ndbdData.status[NdbdStaTouch] = 1; /*压合,用于通知下位机,否则不需置1*/
         }
     }
 
@@ -629,5 +672,588 @@ void trayNdbdCtrl(u8 trayIdx, u8eNdbdCtrlType type, s16 oprVal)
     }
     return;
 }
+
+/*收到上位机开始维护指令*/
+void trayMntnEnter(Tray *tray, u8eBoxWorkMode mode)
+{
+#if 0 /*最初出于节约而不采样,但上和下均有适配不利索,改为继续采样*/
+    if (BoxModeMntnCali == mode)
+    {
+        traySmplMgrRst(tray);
+    }
+#endif
+    tray->trayWorkMode |= mode;
+    tray->protDisable |= ProtDisableMntn;
+    timerStart(&tray->mntnExprTmr, TidTrayMntnExpr, 60000, WiReset);
+    return;
+}
+
+/*收到上位机后续维护指令,更新定时器*/
+void trayMntnKeep(Tray *tray)
+{
+    timerStart(&tray->mntnExprTmr, TidTrayMntnExpr, 60000, WiReset);
+    return;
+}
+
+/*收到级联设备离开维护应答*/
+/*对于上位机触发的离开修调,收到最后一个box的应答后,托盘才离开修调*/
+void trayMntnEnd(Tray *tray, u8eBoxWorkMode mode)
+{
+    if (BoxModeMntnCali == mode)
+    {
+        Box *box;
+        Box *boxCri;
+    
+        for (box=tray->box,boxCri=&tray->box[tray->boxAmt]; box<boxCri; box++)
+        {
+            if (BoxModeMntnCali == box->boxWorkMode)
+            {
+                return;  /*只要有还在修调的box,托盘就不离开维护*/
+            }
+        }
+    }
+
+    tray->trayWorkMode &= ~mode;
+    if (BoxModeManu == tray->trayWorkMode)
+    {
+        TimerStop(&tray->mntnExprTmr);
+        tray->protDisable &= ~ProtDisableMntn;
+    }
+
+    return;
+}
+
+/*托盘维护超时*/
+void trayMntnExpr(Timer *timer)
+{
+    Tray *tray;
+
+    tray = Container(Tray, mntnExprTmr, timer);
+    if (tray->trayWorkMode & BoxModeMntnCali)
+    {
+        Box *box;
+        Box *boxCri;
+    
+        for (box=tray->box,boxCri=&tray->box[tray->boxAmt]; box<boxCri; box++)
+        {
+            if (BoxModeMntnCali == box->boxWorkMode)
+            {
+                /*todo,如果需要通知下位机离开,注掉下一行*/
+                box->boxWorkMode = BoxModeManu;
+                box->online = False;
+            }
+        }
+    }
+
+    tray->trayWorkMode = BoxModeManu;
+    tray->protDisable &= ~ProtDisableMntn;
+    return;
+}
+
+/*todo,,下面这些单独建立文件,现在忘了咋加了*/
+SmplDiskMgr *gSmplDiskMgr = NULL;
+
+/*核实头信息是否有效*/
+b8 diskHeadChkValid(SmplDiskHead *head)
+{
+    u32 chkSum;
+
+    if (head->headLen != HeadLenWoChkSum(head->trayAmt))
+    {
+        return False;
+    }
+
+    chkSum = chkSum32((u32 *)&head->headLen, head->headLen);
+    if (chkSum != head->chkSum)
+    {
+        return False;
+    }
+
+    return True;
+}
+
+/*确定头信息并存储到headDst,若两个参数均无效则失败*/
+Ret diskHeadSelect(SmplDiskHead *headDst, SmplDiskHead *headCmp)
+{
+    b8 validDst;
+    b8 validCmp;
+
+    validDst = diskHeadChkValid(headDst);
+    validCmp = diskHeadChkValid(headCmp);
+    if (validDst)
+    {
+        if (!validCmp)
+        {
+            return Ok;
+        }
+        if (headDst->abTagCnt>headCmp->abTagCnt || 0==headDst->abTagCnt&&255==headCmp->abTagCnt)
+        {
+            return Ok;
+        }
+        memcpy(&headDst->headLen, &headCmp->headLen, headCmp->headLen);
+        return Ok;
+    }
+
+    if (validCmp)
+    {
+        memcpy(&headDst->headLen, &headCmp->headLen, headCmp->headLen);
+        return Ok;
+    }
+
+    return Nok;
+}
+
+/*复位头信息,不包括时间戳*/
+/*headSet--上层的需求,输入输出*/
+/*headMgr--本层管理*/
+/*wtDiskNeed--是否需要重写磁盘头信息*/
+void diskHeadReset(SmplDiskHead *headReq, SmplDiskHead *headDisk, b8 wtDiskNeed)
+{
+    u32 pageBase;
+    u16 smplDiskSize;
+    u8 idx;
+
+    headDisk->headLen = HeadLenWoChkSum(headReq->trayAmt);
+    headDisk->version = headReq->version;
+    headDisk->abTagCnt = 255;  /*从a区0开始*/
+    headDisk->trayAmt = headReq->trayAmt;
+    headDisk->smplAmtPerTs = SmplAmtPerTs;
+    pageBase = SmplHeadDiskPage + 2;
+    for (idx=0; idx<headReq->trayAmt; idx++)
+    {
+        headDisk->trayHead[idx].trayCellAmt = headReq->trayHead[idx].trayCellAmt;
+        headDisk->trayHead[idx].trayBoxAmt = headReq->trayHead[idx].trayBoxAmt;
+        headDisk->trayHead[idx].smplSize = headReq->trayHead[idx].smplSize;
+        headDisk->trayHead[idx].smplAmt = headReq->trayHead[idx].smplAmt;
+        headDisk->trayHead[idx].smplSeq = 0;
+        headDisk->trayHead[idx].diskLooped = False;
+        headDisk->trayHead[idx].pageBase = pageBase;
+        headDisk->trayHead[idx].writeCnt = 0;
+        smplDiskSize = headReq->trayHead[idx].smplSize + sizeof(SmplExtraInfo);
+        headDisk->trayHead[idx].smplPageAmt = smplDiskSize/DiskPageSize;
+        if (smplDiskSize % DiskPageSize)
+        {
+            headDisk->trayHead[idx].smplPageAmt += 1;
+        }
+        pageBase += headDisk->trayHead[idx].smplAmt * headDisk->trayHead[idx].smplPageAmt;
+
+        headReq->trayHead[idx].smplSeq = 0;
+        headReq->trayHead[idx].diskLooped = False;
+    }
+
+    /*将复位信息写入磁盘,也即破坏磁盘原有合法数据*/
+    if (wtDiskNeed)
+    {
+        SmplDiskHead *headReset;
+        headReset = (SmplDiskHead *)gSmplDiskMgr->buffer;
+        headReset->headLen = 0;
+    #ifdef DebugVersion
+    #else
+        sdSpiWrite(gSmplDiskMgr->buffer, SmplHeadDiskPage, 1, 16);
+        sdSpiWrite(gSmplDiskMgr->buffer, SmplHeadDiskPage+1, 1, 16);
+    #endif
+    }
+
+    return;
+}
+
+/*检查从磁盘读出的信息与需求是否匹配*/
+b8 diskHeadChkMatch(SmplDiskHead *headReq, SmplDiskHead *headDisk)
+{
+    u8 idx;
+
+    if (headReq->version != headDisk->version
+        || headReq->trayAmt != headDisk->trayAmt)
+    {
+        return False;
+    }
+
+    for (idx=0; idx<headReq->trayAmt; idx++)
+    {
+        if (headReq->trayHead[idx].trayCellAmt != headDisk->trayHead[idx].trayCellAmt
+            || headReq->trayHead[idx].trayBoxAmt != headDisk->trayHead[idx].trayBoxAmt
+            || headReq->trayHead[idx].smplSize != headDisk->trayHead[idx].smplSize
+            || headReq->trayHead[idx].smplAmt != headDisk->trayHead[idx].smplAmt)
+        {
+            return False;
+        }
+    }
+
+    return True;
+}
+
+/*查找最后的数据,将下一条序号以及循环标志填写到headReq返给上层*/
+/*buffer是临时用的缓存*/
+void diskSmplSeek(SmplDiskHead *headReq, SmplDiskHead *headDisk, u8 *buffer)
+{
+    SmplDiskTrayHead *trayHead;
+    SmplExtraInfo *extraInfo;
+    u32 pageId;
+    u16 smplSeq;
+    u16 readCnt;
+    u16 bufSize;
+    u16 idx;
+
+    for (idx=0; idx<headDisk->trayAmt; idx++)
+    {
+        trayHead = &headDisk->trayHead[idx];
+        extraInfo = (SmplExtraInfo *)(buffer + trayHead->smplSize);
+        headReq->trayHead[idx].diskLooped = trayHead->diskLooped;
+        bufSize = trayHead->smplSize + sizeof(SmplExtraInfo);
+        for (smplSeq=trayHead->smplSeq,readCnt=0; readCnt<headDisk->smplAmtPerTs; readCnt++)
+        {
+            pageId = trayHead->pageBase + smplSeq*trayHead->smplPageAmt;
+        #ifdef DebugVersion
+        #else
+            if (Ok != sdSpiRead(buffer, pageId, trayHead->smplPageAmt, bufSize)
+                || extraInfo->timeStamp != trayHead->timeStamp)
+            {
+                break;
+            }
+        #endif
+
+            if (smplSeq == trayHead->smplAmt-1)
+            {
+                smplSeq = 0;
+                headReq->trayHead[idx].diskLooped = True;
+            }
+            else
+            {
+                smplSeq += 1;
+            }
+        }
+
+        headReq->trayHead[idx].smplSeq = smplSeq;
+    }
+
+    return;
+}
+
+/*目前只支持1条的读写,不排除性能原因而多条读写*/
+Ret smplDiskRead(u8 trayIdx, u8 smplAmt, u8 *smplData, u16 smplSeq)
+{
+    SmplDiskMgr *mgr;
+    SmplDiskTrayHead *trayHead;
+    u32 pageId;
+
+    mgr = gSmplDiskMgr;
+    if (NULL==mgr || trayIdx>=mgr->smplDiskHead->trayAmt)
+    {
+        return Nok;
+    }
+
+    trayHead = &mgr->smplDiskHead->trayHead[trayIdx];
+    pageId = trayHead->pageBase + smplSeq*trayHead->smplPageAmt;
+#ifdef DebugVersion
+    return Nok;
+#else
+    return sdSpiRead(smplData, pageId, trayHead->smplPageAmt, trayHead->smplSize);
+#endif
+}
+
+Ret smplDiskWrite(u8 trayIdx, u8 smplAmt, u8 *smplData, u16 smplSeq)
+{
+    SmplDiskMgr *mgr;
+    SmplDiskHead *diskHead;
+    SmplDiskTrayHead *trayHead;
+    SmplExtraInfo extra;
+    u32 pageId;
+    Ret ret;
+
+    mgr = gSmplDiskMgr;
+    if (NULL==mgr || trayIdx>=mgr->smplDiskHead->trayAmt)
+    {
+        return Nok;
+    }
+
+    diskHead = mgr->smplDiskHead;
+    trayHead = &diskHead->trayHead[trayIdx];
+    if (0 == trayHead->writeCnt%SmplAmtPerTs)
+    {
+        extra.timeStamp = mgr->timeStampBase + sysTimeSecGet();
+    }
+    else
+    {
+        extra.timeStamp = trayHead->timeStamp;
+    }
+
+    pageId = trayHead->pageBase + smplSeq*trayHead->smplPageAmt;
+#ifdef DebugVersion
+#else
+    ret = sdSpiWriteSmpl(smplData, pageId, trayHead->smplPageAmt,
+        trayHead->smplSize, extra.timeStamp, extra.chkSum);
+#endif
+    if (Ok != ret)
+    {
+        return Nok;
+    }
+
+    if (smplSeq == trayHead->smplAmt-1)
+    {
+        trayHead->diskLooped = True;
+    }
+    if (0 == trayHead->writeCnt%SmplAmtPerTs)
+    {
+        diskHead->timeStampBase = trayHead->timeStamp = extra.timeStamp;
+        diskHead->abTagCnt++;
+        trayHead->smplSeq = smplSeq;
+        diskHead->chkSum = chkSum32((u32 *)&diskHead->headLen, diskHead->headLen);
+        pageId = 0==diskHead->abTagCnt%2 ? SmplHeadDiskPage : SmplHeadDiskPage+1;
+    #ifdef DebugVersion
+    #else
+        ret = sdSpiWrite((u8 *)diskHead, pageId, 1, diskHead->headLen+sizeof(u32));
+    #endif
+        if (Ok != ret)
+        {
+            diskHead->abTagCnt--;
+            return Nok;
+        }
+    }
+
+    trayHead->writeCnt++;
+    return Ok;
+}
+
+Ret smplDiskInit(SmplDiskHead *headSet)
+{
+    SmplDiskMgr *mgr;
+    u16 idx;
+    u16 smplPageAmtMax;
+    u16 smplDiskSize;  /*单采样存储大小,实际采样加额外信息*/
+    u16 headSize;
+    u32 diskTtlSize;
+    u8 smplPageAmt;
+    Ret ret;
+
+    if (NULL!=gSmplDiskMgr || NULL==(mgr=sysMemAlloc(sizeof(SmplDiskMgr))))
+    {
+        return Nok;
+    }
+
+    /*存储时附带时间戳和校验和,其中校验和暂时不用*/
+    for (smplPageAmtMax=0,diskTtlSize=0,idx=0; idx<headSet->trayAmt; idx++)
+    {
+        smplDiskSize = headSet->trayHead[idx].smplSize + sizeof(SmplExtraInfo);
+        smplPageAmt = smplDiskSize/DiskPageSize;
+        if (smplDiskSize % DiskPageSize)
+        {
+            smplPageAmt += 1;
+        }
+
+        diskTtlSize += smplPageAmt * DiskPageSize;
+        if (smplPageAmtMax < smplPageAmt)
+        {
+            smplPageAmtMax = smplPageAmt;
+        }
+    }
+
+    if (diskTtlSize+DiskPageSize*2 > SmplDiskSizeMax)
+    {
+        return Nok;
+    }
+
+    headSize = sizeof(SmplDiskHead) + sizeof(SmplDiskTrayHead)*headSet->trayAmt;
+    mgr->smplDiskHead = sysMemAlloc(headSize);
+    mgr->buffer = sysMemAlloc(smplPageAmtMax * DiskPageSize);
+    if (NULL==mgr->smplDiskHead || NULL==mgr->buffer)
+    {
+        return Nok;  /*目前系统,不用释放*/
+    }
+    gSmplDiskMgr = mgr;
+
+    /*读取磁盘头信息,a区*/
+#ifdef DebugVersion
+#else
+    sdSpiRead(mgr->buffer, SmplHeadDiskPage, 1, DiskPageSize);
+#endif
+    memcpy(mgr->smplDiskHead, mgr->buffer, headSize);
+
+    /*读取磁盘头信息,b区*/
+#ifdef DebugVersion
+#else
+    sdSpiRead(mgr->buffer, SmplHeadDiskPage+1, 1, DiskPageSize);
+#endif
+    ret = diskHeadSelect(mgr->smplDiskHead, (SmplDiskHead *)mgr->buffer);
+    if (Ok != ret) /*磁盘头信息无效,不用重写头信息*/
+    {
+        diskHeadReset(headSet, mgr->smplDiskHead, False);
+        mgr->timeStampBase = 12345;
+        return Ok;
+    }
+
+    /*磁盘头信息合法,再与初始化入参即需求相比较*/
+    /*如果磁盘头信息与入参需求不符,清空磁盘*/
+    mgr->timeStampBase = mgr->smplDiskHead->timeStampBase + 2;
+    if (!diskHeadChkMatch(headSet, mgr->smplDiskHead))
+    {
+        diskHeadReset(headSet, mgr->smplDiskHead, True);
+        return Ok;
+    }
+
+    /*都匹配,就找到最后一条数据的序号,以及循环标志,一起返回给上层*/
+    diskSmplSeek(headSet, mgr->smplDiskHead, mgr->buffer);
+    for (idx=0; idx<mgr->smplDiskHead->trayAmt; idx++)
+    {
+        mgr->smplDiskHead->trayHead[idx].writeCnt = 0;
+    }
+    return Ok;
+}
+
+
+void testMakeSmpl(u8 *buffer, u16 len, u16 seq, u8 trayId, u8 base)
+{
+    u8 *bufCri;
+
+    for (bufCri=buffer+len; buffer<bufCri; buffer++)
+    {
+        *buffer = (u8)seq + trayId + base++;
+    }
+    return;
+}
+u32 testSmplDisk()
+{
+    u8 *bufWt;
+    u8 *bufRd;
+    SmplDiskHead *smplDiskHead;
+    u16 smplSize;
+    u16 idx;
+    u16 testTimes;
+    u16 smplSeq;
+    u32 tempMs;
+    u8 trayAmt;
+    u8 ret;
+    u8 trayIdx;
+    u8 looped;
+    u32 timeBase;
+    u32 timeCrnt;
+    u32 timeMaxWt;
+    u32 timeMaxRd;
+
+    timeMaxWt = timeMaxRd = 0;
+    smplSize = 1400;
+    trayAmt = 4;
+    bufWt = sysMemAlloc(smplSize);
+    bufRd = sysMemAlloc(smplSize);
+    smplDiskHead = sysMemAlloc(sizeof(SmplDiskHead) + sizeof(SmplDiskTrayHead)*trayAmt);
+    smplDiskHead->trayAmt = trayAmt;
+    smplDiskHead->version = 3;
+    for (idx=0; idx<trayAmt; idx++)
+    {
+        smplDiskHead->trayHead[idx].trayCellAmt = 32;
+        smplDiskHead->trayHead[idx].trayBoxAmt = 8;
+        smplDiskHead->trayHead[idx].smplSize = smplSize;
+        smplDiskHead->trayHead[idx].smplAmt = 2000;
+        smplDiskHead->trayHead[idx].smplSeq = 136;  /*随便弄个,以确定变化,这个是回传不是输入*/
+    }
+
+    if (Ok != smplDiskInit(smplDiskHead))
+    {
+        tempMs = sysTimeMsGet();
+        return tempMs;
+    }
+
+    if (0==smplDiskHead->trayHead[0].smplSeq && !smplDiskHead->trayHead[0].diskLooped)
+    {
+        timeBase = sysTimeMsGet();
+        for (smplSeq=0; smplSeq<2064; smplSeq++)
+        {
+            for (trayIdx=0; trayIdx<trayAmt; trayIdx++)
+            {
+                testMakeSmpl(bufWt, smplSize, smplSeq%2000, trayIdx, 13);
+                ret = smplDiskWrite(trayIdx, 1, bufWt, smplSeq%2000);
+                if (Ok != ret)
+                {
+                    tempMs = sysTimeMsGet();
+                    return tempMs;
+                }
+                ret = smplDiskRead(trayIdx, 1, bufRd, smplSeq%2000);
+                if (Ok != ret)
+                {
+                    tempMs = sysTimeMsGet();
+                    return tempMs;
+                }
+                if (memcmp(bufWt, bufRd, smplSize))
+                {
+                    tempMs = sysTimeMsGet();
+                    return tempMs;
+                }
+            }
+        }
+        timeCrnt = sysTimeMsGet();
+        tempMs = timeCrnt-timeBase;
+    }
+    else
+    {
+        for (smplSeq=0; smplSeq<2000; smplSeq++)
+        {
+            for (trayIdx=0; trayIdx<trayAmt; trayIdx++)
+            {
+                testMakeSmpl(bufWt, smplSize, smplSeq, trayIdx, 13);
+                timeBase = sysTimeMsGet();
+                ret = smplDiskRead(trayIdx, 1, bufRd, smplSeq);
+                if (Ok != ret)
+                {
+                    tempMs = sysTimeMsGet();
+                    return tempMs;
+                }
+                timeCrnt = sysTimeMsGet();
+                tempMs = timeCrnt-timeBase;
+                if (tempMs > timeMaxRd)
+                {
+                    timeMaxRd = tempMs;
+                }
+                if (memcmp(bufWt, bufRd, smplSize))
+                {
+                    tempMs = sysTimeMsGet();
+                    return tempMs;
+                }
+            }
+        }
+
+        for (smplSeq=0; smplSeq<2000; smplSeq++)
+        {
+            for (trayIdx=0; trayIdx<trayAmt; trayIdx++)
+            {
+                testMakeSmpl(bufWt, smplSize, smplSeq, trayIdx, 14);
+                timeBase = sysTimeMsGet();
+                ret = smplDiskWrite(trayIdx, 1, bufWt, smplSeq);
+                if (Ok != ret)
+                {
+                    tempMs = sysTimeMsGet();
+                    return tempMs;
+                }
+                timeCrnt = sysTimeMsGet();
+                tempMs = timeCrnt-timeBase;
+                if (tempMs > timeMaxWt)
+                {
+                    timeMaxWt = tempMs;
+                }
+            }
+        }
+
+        for (smplSeq=0; smplSeq<2000; smplSeq++)
+        {
+            for (trayIdx=0; trayIdx<trayAmt; trayIdx++)
+            {
+                testMakeSmpl(bufWt, smplSize, smplSeq, trayIdx, 14);
+                ret = smplDiskRead(trayIdx, 1, bufRd, smplSeq);
+                if (Ok != ret)
+                {
+                    tempMs = sysTimeMsGet();
+                    return tempMs;
+                }
+                if (memcmp(bufWt, bufRd, smplSize))
+                {
+                    tempMs = sysTimeMsGet();
+                    return tempMs;
+                }
+            }
+        }
+    }
+
+    tempMs = sysTimeMsGet() + timeMaxWt + timeMaxRd;
+    return tempMs;
+}
+
 
 #endif

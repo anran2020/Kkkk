@@ -75,31 +75,32 @@ typedef u8 u8eUpChnState;  /*用于通知上位机的状态*/
 /*其实,如果假定下位机没问题,也即不考虑对下位机防呆的话*/
 /*中位机的状态管理会很简单*/
 /*但若做防呆,基于下位机缓存采样,中位机的状态管理比较艰难*/
-/*多种因素综合,可以结论为:下位机缓存采样不是个好的决策*/
+/*多种因素综合,可以结论为:下位机缓存采样有可能不太好*/
 /*状态管理,一种是状态详细但不依赖于其它标志*/
 /*另一种是状态简明但经常要结合其它标志*/
 /*就设计时复杂度来说二者差不多,但就维护扩展来说前者远优于后者*/
+/*实践一段时间后,感觉上位机停止或暂停后的逻辑可以继续简化,todo*/
+/*上位机停止或暂停后,视同保护后的那样,丢弃后面的运行态数据*/
 typedef u8 u8eMedChnState;  /*中位机维护的通道运行状态*/
 #define ChnStaIdle        0x00   /*流程跑完且新流程未开始*/
-#define ChnStaStop        0x01
-#define ChnStaPause       0x02
-#define ChnStaNpWait      0x03   /*等待负压*/
-#define ChnStaStart     0x04   /*已下发工步但下位机未进入run*/
-#define ChnStaRun         0x05
-#define ChnStaUpStopReq  0x06  /*运行态上位机停止且下发,需等下位机截止*/
-#define ChnStaUpPauseReq  0x07  /*运行态上位机暂停且下发,需等下位机截止*/
-#define ChnStaUpStopEnd  0x08  /*上位机触发停止的截止数据*/
-#define ChnStaUpPauseEnd  0x09  /*上位机触发暂停的截止数据*/
-#define ChnStaLowNmlEnd   0x0a   /*下位机运行态正常截止,当前采样为截止数据*/
+#define ChnStaPause       0x01
+#define ChnStaNpWait      0x02   /*等待负压*/
+#define ChnStaStart     0x03   /*已下发工步但下位机未进入run*/
+#define ChnStaRun         0x04
+#define ChnStaUpStopReq  0x05  /*运行态上位机停止且下发,需等下位机截止*/
+#define ChnStaUpPauseReq  0x06  /*运行态上位机暂停且下发,需等下位机截止*/
+#define ChnStaUpStopEnd  0x07  /*上位机触发停止的截止数据*/
+#define ChnStaUpPauseEnd  0x08  /*上位机触发暂停的截止数据*/
+#define ChnStaLowNmlEnd   0x09   /*下位机运行态正常截止,当前采样为截止数据*/
+#define ChnStaMedEnd     0x0a   /*中位机截止,目前只有定容跳工步用到*/
 #define ChnStaLowProtEnd  0x0b   /*下位机运行态保护,当前采样为截止数据,等下位机空闲*/
 #define ChnStaUpStopStartReq  0x0c  /*启动态上位机停止且(启动态时)下发,等下位机空闲*/
 #define ChnStaUpPauseStartReq  0x0d  /*启动态上位机暂停且(启动态时)下发,等下位机空闲*/
 #define ChnStaUpStopNpReq  0x0e  /*等负压时上位机停止且(启动态时)下发,等下位机空闲*/
 #define ChnStaUpPauseNpReq  0x0f  /*等负压时上位机暂停且(启动态时)下发,等下位机空闲*/
-#define ChnStaMedStopWait  0x010   /*等待下位机空闲后进入stop*/
+#define ChnStaMedIdleWait  0x10   /*等待下位机空闲后进入idle*/
 #define ChnStaMedPauseWait  0x11   /*等待下位机空闲后进入pause*/
-#define ChnStaMedIdleWait  0x12   /*等待下位机空闲后进入idle*/
-#define ChnMedStaCri         0x13
+#define ChnMedStaCri         0x12
 
 typedef u8 u8eChgType;
 #define ChgTypeChg        0x00   /**/
@@ -137,6 +138,12 @@ typedef u8 u8eTrayTouchState;  /*压接状态*/
 #define TouchStateHover       0x03   /*悬停*/
 #define TouchStateCri          0x04
 
+typedef u8 u8eNdbdDynType;  /*针床动态数据*/
+#define NdbdDynCellTmpr  0x00
+#define NdbdDynSlotTmpr  0x01
+#define NdbdDynWaterTmpr  0x02
+#define NdbdDynCri  0x04
+
 typedef u8 u8eNpType;  /*负压类型*/
 #define NpTypeNone    0x00   /*无负压需求*/
 #define NpTypeHigh    0x01   /*高低负压之高负压*/
@@ -145,15 +152,20 @@ typedef u8 u8eNpType;  /*负压类型*/
 #define NpTypeRatio   0x04   /*比例阀负压*/
 #define NpTypeCri     0x05
 
-typedef u8 u8eProtGrp;  /*保护群组,废弃,todo*/
-#define ProtGrpQuiet        0x00   /*搁置*/
-#define ProtGrpCCC      0x01   /*恒流充 含恒流恒压充电之恒流段*/
-#define ProtGrpCCD         0x02   /*恒流放 含恒流恒压放电之恒流段*/
-#define ProtGrpCVC         0x03   /*恒压充 含恒流恒压充电之恒压段*/
-#define ProtGrpCVD       0x04   /*恒压放 含恒流恒压放电之恒压段*/
-#define ProtGrpCCCVC       0x05   /*恒流恒压充电之特定保护*/
-#define ProtGrpCCCVD         0x06   /*恒流恒压放电之特定保护*/
-#define ProtGrpCri         0x07
+/*工步保护分为两组,仅在于减少部分查找量*/
+typedef u8 u8eProtGrp;  /*保护群组*/
+#define ProtGrpFlow      0x00   /*流程*/
+#define ProtGrpTray         0x01   /*全程即托盘*/
+#define ProtGrpStep1        0x02   /*保护id小于0x040b的工步保护*/
+#define ProtGrpStep2        0x03   /*保护id大于等于0x040b的工步保护*/
+#define ProtGrpCri         0x04
+
+#define ProtGrpStep1IdCri  0x040b
+
+typedef u8 u8eChnProtPolicy;
+#define ChnProtPause 0x00
+#define ChnProtStop 0x01
+#define ChnProtCri 0x02
 
 typedef u8 u8eNpTime;
 #define NpTimeVacuoMake   0x00  /*抽真空时间，要达到预期，T0*/
@@ -193,7 +205,7 @@ typedef u8 u8eMixSubId;  /*组合保护因子*/
 #define MixSubFlowIdleCurLeak    0x17   /*流程闲时漏电流*/
 #define MixSubCri    0x18
 
-typedef u8 u8eProtPolicy;  /*保护处理策略,调整,todo*/
+typedef u8 u8eProtPolicy;
 #define PolicyNdbdBrk     0x00   /*弹开库位针床*/
 #define PolicyFmsNtfy     0x01   /*通知fms*/
 #define PolicyGasEnable     0x02   /*打开气消防*/
@@ -257,7 +269,10 @@ typedef u8 u8eUpFixtDevType;
 #define UpFixtTypeSuctOut   0x06  /*拔吸嘴工装*/
 #define UpFixtTypeLocat   0x07  /*定位工装*/
 #define UpFixtTypePrecParal   0x08  /*并联精度线序工装,与串联共用协议*/
-#define UpFixtTypeCri   0x09
+#define UpFixtTypeSuctIn2   0x09  /*插吸嘴工装2型*/
+#define UpFixtTypeSuctOut2   0x0a  /*拔吸嘴工装2型*/
+#define UpFixtTypeLocat2   0x0b  /*定位工装2型*/
+#define UpFixtTypeCri   0x0c
 
 typedef u8 u8eUpdFileType;
 #define UpdateFileApp  0x00  /**/
@@ -283,7 +298,10 @@ typedef u8 u8eUartDevType;
 #define UartFixtSuctOut 0x09
 #define UartFixtLocat 0x0a
 #define UartFixtFlow 0x0b
-#define UartDevTypeCri 0x0c
+#define UartFixtSuctIn2 0x0c
+#define UartFixtSuctOut2 0x0d
+#define UartFixtLocat2 0x0e
+#define UartDevTypeCri 0x0f
 
 /*通讯地址基址*/
 #define UartAddrBaseTmprSmpl 0x00
@@ -298,6 +316,9 @@ typedef u8 u8eUartDevType;
 #define UartAddrBaseFixtSuctOut 0xd8
 #define UartAddrBaseFixtLocat 0xdc
 #define UartAddrBaseFixtFlow 0xe0
+#define UartAddrBaseFixtSuctIn2 0xe4
+#define UartAddrBaseFixtSuctOut2 0xe8
+#define UartAddrBaseFixtLocat2 0xec
 
 typedef u8 u8eUpUpdDevType;
 #define UpUpdDevMedium  0x00  /*中位机*/
@@ -329,7 +350,9 @@ typedef u8 u8eNdbdStaType;
 #define NdbdSenCylinderDown 0x0f  /*气缸下感应0无感1有感*/
 #define NdbdSenCylinderUp 0x10  /*气缸上感应0无感1有感*/
 #define NdbdSenPlcVer 0x11  /*plc版本号*/
-#define NdbdSenCri 0x12  /**/
+#define NdbdSenBollOpen 0x12  /*排液球阀开到位*/
+#define NdbdSenBollClose 0x13  /*排液球阀关到位*/
+#define NdbdSenCri 0x14  /**/
 
 /*针床告警状态或传感器*/
 /*有告警时不能启动新的流程,部分告警发生时需中断流程*/
@@ -379,7 +402,9 @@ typedef u8 u8eNdbdCtrlType;
 #define BitSenBackDoor 0x0a  /*后门检测0关1开*/
 #define BitSenCylinderUp 0x0b  /*气缸上感应0无感1有感*/
 #define BitSenCylinderDown 0x0c  /*气缸下感应0无感1有感*/
-#define BitSenCri   0x0d
+#define BitSenBollOpen   0x0d  /*排液球阀开到位*/
+#define BitSenBollClose   0x0e  /*排液球阀开到位*/
+#define BitSenCri   0x0f
 
 /*告警bitmap*/
 #define BitWarnScram 0x00    /*急停*/
@@ -415,7 +440,6 @@ typedef u8 u8eNpOprCode;
 #define NpOprRatioSwBrk 0x05  /*破真空阀*/
 #define NpOprRatioReset 0x6  /*比例阀复位,破关比关导开*/
 #define NpOprRatioCri  0x07
-
 
 /*负压设备类型*/
 typedef u8 u8eNpDevType;
@@ -454,19 +478,17 @@ typedef u8 u8eFixtLocatTurnType;
 #define FixtLocatTurnBkwd 0x02  /*反转*/
 #define FixtLocatTurnCri 0x03  /**/
 
-/*部分下位机异常码*/
-typedef u8 u8eCauseCodeLow;
-#define CcLowTime  0x01
-#define CcLowCap  0x02
-#define CcLowVol  0x03
-#define CcLowCur  0x04
-#define CcLowUser  0x07
-
 typedef u8 u8eConnType;
 #define ConnTypeFst  0x00
 #define ConnTypeNml  0x01
 #define ConnTypeBoot  0x02
 #define ConnTypeCri  0x03
+
+typedef u8 u8eLowBypsSwSta;  /*下位机旁路板状态*/
+#define LowBypsSwOut  0x00   /*切出态*/
+#define LowBypsSwCc  0x01   /*切入Cc*/
+#define LowBypsSwCv  0x02   /*切入Cv*/
+#define LowBypsSwCri  0x03   /**/
 
 #endif
 #endif

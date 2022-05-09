@@ -69,6 +69,21 @@ typedef u8 u8eUartMsgId;
 #define UartMsgFixtLocatSmpl 0x00  /**/
 #define UartMsgFixtLocatAct 0x01  /**/
 #define UartMsgFixtLocatCri 0x02
+
+/*插吸嘴工装2型特有消息类型*/
+#define UartMsgFixtSuckIn2Smpl 0x00  /**/
+#define UartMsgFixtSuckIn2Act 0x01  /**/
+#define UartMsgFixtSuckIn2Cri 0x02
+
+/*拔吸嘴工装2型特有消息类型*/
+#define UartMsgFixtSuckOut2Smpl 0x00  /**/
+#define UartMsgFixtSuckOut2Act 0x01  /**/
+#define UartMsgFixtSuckOut2Cri 0x02
+
+/*定位工装2型特有消息类型*/
+#define UartMsgFixtLocat2Smpl 0x00  /**/
+#define UartMsgFixtLocat2Act 0x01  /**/
+#define UartMsgFixtLocat2Cri 0x02
 /*---------------串口设备消息类型，结束-----------------*/
 
 /*所有串口设备共用消息头*/
@@ -367,7 +382,7 @@ typedef struct
 /*---------------负压流量工装消息，结束-----------------*/
 
 /*---------------插吸嘴工装消息，开始-----------------*/
-/*插吸嘴工装采样命令*/
+/*插吸嘴工装1型2型采样命令*/
 typedef struct
 {
     u8eUartDevType devType;
@@ -375,7 +390,7 @@ typedef struct
     u16 delayTime; /*0--采存储,1--延时后采样保存*/
 }UartFixtSuckInSmplCmd;
 
-/*插吸嘴工装采样应答*/
+/*插吸嘴工装1型采样应答*/
 typedef struct
 {
     u8eUartDevType devType;
@@ -384,10 +399,30 @@ typedef struct
     b8 hasRemain;
 }UartFixtSuckInSmplAck;
 
+/*插吸嘴工装2型采样应答*/
+typedef struct
+{
+    u8eUartDevType devType;
+    u8eUartMsgId msgId;
+    u8 rspCode;
+    b8 hasRemain;
+    u8 topUpPos;
+    u8 rsvd[3];
+}UartFixtSuckIn2SmplAck;
+
+/*插吸嘴工装2型动作命令,响应适用通用*/
+typedef struct
+{
+    u8eUartDevType devType;
+    u8eUartMsgId msgId;
+    u8 topUpAct;
+    u8 rsvd[5];
+}UartFixtSuckIn2ActCmd;
+
 /*---------------插吸嘴工装消息，结束-----------------*/
 
 /*---------------拔吸嘴工装消息，开始-----------------*/
-/*拔吸嘴工装采样命令*/
+/*拔吸嘴工装1型2型采样命令*/
 typedef struct
 {
     u8eUartDevType devType;
@@ -395,7 +430,7 @@ typedef struct
     u16 rsvd;
 }UartFixtSuckOutSmplCmd;
 
-/*拔吸嘴工装采样应答*/
+/*拔吸嘴工装1型采样应答*/
 typedef struct
 {
     u8eUartDevType devType;
@@ -406,7 +441,19 @@ typedef struct
     u8 rsvd[3];
 }UartFixtSuckOutSmplAck;
 
-/*拔吸嘴工装动作命令,响应适用通用*/
+/*拔吸嘴工装2型采样应答*/
+typedef struct
+{
+    u8eUartDevType devType;
+    u8eUartMsgId msgId;
+    u8 rspCode;
+    u8eFixtSuckOutStaType state;
+    b8 hasRemain;
+    u8 topUpPos;  /*顶升杆位置*/
+    u8 rsvd[2];
+}UartFixtSuckOut2SmplAck;
+
+/*拔吸嘴工装1型动作命令,响应适用通用*/
 typedef struct
 {
     u8eUartDevType devType;
@@ -415,10 +462,21 @@ typedef struct
     u8 rsvd;
     u32 delayTime;
 }UartFixtSuckOutActCmd;
+
+/*拔吸嘴工装2型动作命令,响应适用通用*/
+typedef struct
+{
+    u8eUartDevType devType;
+    u8eUartMsgId msgId;
+    u8eFixtSuckOutStaType action;
+    u8 topUpAct;   /*顶升杆动作,0忽略1上升2下降*/
+    u32 rsvd;
+    u32 delayTime;
+}UartFixtSuckOut2ActCmd;
 /*---------------拔吸嘴工装消息，结束-----------------*/
 
 /*---------------定位工装消息，开始-----------------*/
-/*定位工装采样命令*/
+/*定位工装1型2型采样命令*/
 typedef struct
 {
     u8eUartDevType devType;
@@ -426,7 +484,7 @@ typedef struct
     u16 rsvd;
 }UartFixtLocatSmplCmd;
 
-/*定位工装采样应答*/
+/*定位工装1型采样应答*/
 typedef struct
 {
     u8eUartDevType devType;
@@ -437,7 +495,19 @@ typedef struct
     u8 rsvd[3];
 }UartFixtLocatSmplAck;
 
-/*定位工装动作命令,响应适用通用*/
+/*定位工装2型采样应答*/
+typedef struct
+{
+    u8eUartDevType devType;
+    u8eUartMsgId msgId;
+    u8 rspCode;
+    b8 unlockSucc;
+    u8eFixtLocatPos locatPos;
+    u8 topUpPos;  /*顶升杆位置*/
+    u8 rsvd[2];
+}UartFixtLocat2SmplAck;
+
+/*定位工装1型动作命令,响应适用通用*/
 typedef struct
 {
     u8eUartDevType devType;
@@ -448,6 +518,20 @@ typedef struct
     u8eFixtLocatTurnType cathodeTurn;  /*负极电机*/
     u16 delayTime;
 }UartFixtLocatActCmd;
+
+/*定位工装2型动作命令,响应适用通用*/
+typedef struct
+{
+    u8eUartDevType devType;
+    u8eUartMsgId msgId;
+    u8 cellType;
+    u8eFixtLocatTurnType anodeTurn;  /*正极电机*/
+    u8eFixtLocatTurnType npTurn;  /*负压电机*/
+    u8eFixtLocatTurnType cathodeTurn;  /*负极电机*/
+    u8 topUpAct;   /*顶升杆动作,0忽略1上升2下降*/
+    u8 rsvd[3];
+    u16 delayTime;
+}UartFixtLocat2ActCmd;
 /*---------------定位工装消息，结束-----------------*/
 
 /*---------------配置升级消息，开始-----------------*/
@@ -546,6 +630,9 @@ typedef struct
     UartMsgProc uartFixtSuckInMsgProc[UartMsgFixtSuckInCri];
     UartMsgProc uartFixtSuckOutMsgProc[UartMsgFixtSuckOutCri];
     UartMsgProc uartFixtLocatMsgProc[UartMsgFixtLocatCri];
+    UartMsgProc uartFixtSuckIn2MsgProc[UartMsgFixtSuckIn2Cri];
+    UartMsgProc uartFixtSuckOut2MsgProc[UartMsgFixtSuckOut2Cri];
+    UartMsgProc uartFixtLocat2MsgProc[UartMsgFixtLocat2Cri];
 }UartMgr;
 
 extern UartMgr *gUartMgr;
@@ -560,6 +647,8 @@ extern void uartExprCtrlAck(Timer *timer);
 extern void uartExprSmplAck(Timer *timer);
 extern void uartTransTxTry(u8 uartIdx, void *buf);
 extern void *allocUartBlockBuf();
+extern void setUartBlockBuf(UartBlockCmdBuf *blockBuf, u8 trayIdx, u16 upCmdId, u8 cmmuAddr,
+                         u8eUartDevType uartDevType, u8eUartMsgId uartMsgId);
 extern void uartSmplBegin(Timer *timer);
 extern b8 tmprSmplBeOnline(u8 trayIdx);
 extern void ndbdMcuCtrlRst(NdbdMcuCtrl *ndbdMcuCtrl);
