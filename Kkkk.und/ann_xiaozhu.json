@@ -1,0 +1,165 @@
+{
+    "ents": {
+        "@l./mlos/os/mlos_list.c": [
+            {
+                "author": "xiaozhu",
+                "body": "匿名结构体",
+                "created": "2022-05-17T07:34:57.773Z",
+                "lastmodified": "Tue May 17 07:35:07 2022 GMT",
+                "line": "40",
+                "lineContext": "#pragma anon_unions",
+                "machineid": "958752E34AAF20B97F40D3FC28C392CF1847A3"
+            }
+        ],
+        "@lAlarmLight_Switch@kAlarmLight_Switch@f./tray/alarm_led.c": [
+            {
+                "author": "xiaozhu",
+                "body": "通过在一个函数内做到三个子函数的切换，本质上是在数组上操作的，只不过是将函数地址放在数组的不同单元，然后通过寻址实现不同的执行",
+                "created": "2022-05-17T07:35:57.580Z",
+                "lastmodified": "Tue May 17 07:36:03 2022 GMT",
+                "line": "0",
+                "lineContext": "void AlarmLight_Switch(mlu8 group,mlu8 yellow,mlu8 green,mlu8 red)",
+                "machineid": "958752E34AAF20B97F40D3FC28C392CF1847A3"
+            }
+        ],
+        "@lapp_init@kapp_init@f./app/u_app.c": [
+            {
+                "author": "xiaozhu",
+                "body": "这就是临界段！！\n表示执行期间不允许中断",
+                "created": "2022-05-17T07:39:06.657Z",
+                "lastmodified": "Tue May 17 08:36:20 2022 GMT",
+                "line": "2",
+                "lineContext": "__disable_irq();",
+                "machineid": "958752E34AAF20B97F40D3FC28C392CF1847A3"
+            }
+        ],
+        "@lexsram_check@kexsram_check@f./mlos/port/RA6M4/mlos_port.c": [
+            {
+                "author": "xiaozhu",
+                "body": "检查是否有片外sRAM的方法",
+                "created": "2022-05-17T07:36:28.389Z",
+                "lastmodified": "Tue May 17 07:36:34 2022 GMT",
+                "line": "0",
+                "lineContext": "MLBool exsram_check(void)",
+                "machineid": "958752E34AAF20B97F40D3FC28C392CF1847A3"
+            }
+        ],
+        "@llist_create@klist_create@f./mlos/os/mlos_list.c": [
+            {
+                "author": "xiaozhu",
+                "body": "1.申请片上的sRAM,申请成功后根据结构指针指向的地址分别初始化参数",
+                "created": "2022-05-18T09:22:34.843Z",
+                "lastmodified": "Wed May 18 09:30:59 2022 GMT",
+                "line": "0",
+                "lineContext": "ListPtr list_create(MemoryType memtype,ListSortord sortord,ListLinkMode lnkmd)",
+                "machineid": "958752E34AAF20B97F40D3FC28C392CF1847A3"
+            }
+        ],
+        "@lmlos_task_init@kmlos_task_init@f./mlos/os/mlos_task.c": [
+            {
+                "author": "xiaozhu",
+                "body": "1. 初始化每个任务链表当前任务指针 \n2. 根据优先级个数创建相应数量的双向任务链表 \n3. 任务组0->任务组1->...->任务组9->任务组0 （循环链表）",
+                "created": "2022-05-17T07:33:33.295Z",
+                "lastmodified": "Tue May 17 07:34:15 2022 GMT",
+                "line": "1",
+                "lineContext": "{",
+                "machineid": "958752E34AAF20B97F40D3FC28C392CF1847A3"
+            }
+        ],
+        "@lsendUpConnCmd@ksendUpConnCmd@f./tray/host.c": [
+            {
+                "author": "xiaozhu",
+                "body": "联机上位机",
+                "created": "2022-05-17T07:35:32.185Z",
+                "lastmodified": "Tue May 17 07:35:42 2022 GMT",
+                "line": "0",
+                "lineContext": "void sendUpConnCmd(Timer *timer)",
+                "machineid": "958752E34AAF20B97F40D3FC28C392CF1847A3"
+            }
+        ],
+        "@ltask_schedule_prepare@ktask_schedule_prepare@f./mlos/os/mlos_task.c": [
+            {
+                "author": "xiaozhu",
+                "body": "这一行其实只要定位到任务消息队列开头即可",
+                "created": "2022-05-17T10:21:05.411Z",
+                "lastmodified": "Tue May 17 10:21:56 2022 GMT",
+                "line": "11",
+                "lineContext": "ptsk=taskgroup[0].ptasklist->head;",
+                "machineid": "958752E34AAF20B97F40D3FC28C392CF1847A3"
+            },
+            {
+                "author": "xiaozhu",
+                "body": "任务链表首尾相连，直接一个while循环就初始化完毕了",
+                "created": "2022-05-17T10:20:32.908Z",
+                "lastmodified": "Tue May 17 10:21:02 2022 GMT",
+                "line": "19",
+                "lineContext": "ptsk=ptsk->pnext;",
+                "machineid": "958752E34AAF20B97F40D3FC28C392CF1847A3"
+            }
+        ],
+        "@ltool_setting_read@ktool_setting_read@f./mllib/tool/tool_setting.c": [
+            {
+                "author": "xiaozhu",
+                "body": "直接从flash中读取信息，然后装包",
+                "created": "2022-05-18T07:02:17.754Z",
+                "lastmodified": "Wed May 18 07:02:39 2022 GMT",
+                "line": "65",
+                "lineContext": "memcpy(txbuf+16,(mlu8*)flashAddr,pageNum*SETTING_PAGE_SIZE);",
+                "machineid": "958752E34AAF20B97F40D3FC28C392CF1847A3"
+            }
+        ],
+        "@ltool_setting_write@ktool_setting_write@f./mllib/tool/tool_setting.c": [
+            {
+                "author": "xiaozhu",
+                "body": "将获取到的数据写入flash",
+                "created": "2022-05-18T07:09:34.713Z",
+                "lastmodified": "Wed May 18 07:10:27 2022 GMT",
+                "line": "34",
+                "lineContext": "if(!setting_page_update(pageIndx, (mlu32*)datptr, SETTING_PAGE_SIZE))",
+                "machineid": "958752E34AAF20B97F40D3FC28C392CF1847A3"
+            },
+            {
+                "author": "xiaozhu",
+                "body": "写入后返回数据包，成功？失败？",
+                "created": "2022-05-18T07:11:37.558Z",
+                "lastmodified": "Wed May 18 07:12:05 2022 GMT",
+                "line": "46",
+                "lineContext": "",
+                "machineid": "958752E34AAF20B97F40D3FC28C392CF1847A3"
+            }
+        ],
+        "@ltool_tx_data@ktool_tx_data@f./mllib/tool/tool.c": [
+            {
+                "author": "xiaozhu",
+                "body": "iaq搜索时发包的地方\n",
+                "created": "2022-05-18T06:47:06.206Z",
+                "lastmodified": "Wed May 18 06:47:17 2022 GMT",
+                "line": "0",
+                "lineContext": "int tool_tx_data(mlu8 cmd,mlu8 addr,mlu8*pdat,mlu16 datlen)",
+                "machineid": "958752E34AAF20B97F40D3FC28C392CF1847A3"
+            }
+        ],
+        "@ltool_txbuf_malloc@ktool_txbuf_malloc@f./mllib/tool/tool.c": [
+            {
+                "author": "xiaozhu",
+                "body": "返回数据缓冲区的地址，以方便调用的地方处理写入的内容，通过udp发送",
+                "created": "2022-05-18T07:12:42.170Z",
+                "lastmodified": "Wed May 18 07:15:04 2022 GMT",
+                "line": "0",
+                "lineContext": "mlu8* tool_txbuf_malloc(mlu16 len)",
+                "machineid": "958752E34AAF20B97F40D3FC28C392CF1847A3"
+            }
+        ],
+        "@lw5500_socket_tx@kw5500_socket_tx@f./mllib/ntp/w5500/ntp_w5500.c": [
+            {
+                "author": "xiaozhu",
+                "body": "将缓冲区的数据通过网口发送",
+                "created": "2022-05-18T07:20:10.154Z",
+                "lastmodified": "Wed May 18 07:20:35 2022 GMT",
+                "line": "0",
+                "lineContext": "mlu16 w5500_socket_tx(USockptr pusck)",
+                "machineid": "958752E34AAF20B97F40D3FC28C392CF1847A3"
+            }
+        ]
+    }
+}

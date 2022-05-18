@@ -198,49 +198,6 @@
       <dir
         name="tray"/>
     </dir>
-    <dir
-      name="D:">
-      <dir
-        name="Program Files">
-        <dir
-          name="Microsoft Visual Studio">
-          <dir
-            name="2022">
-            <dir
-              name="Community">
-              <dir
-                name="VC">
-                <dir
-                  name="Tools">
-                  <dir
-                    name="MSVC">
-                    <dir
-                      name="14.31.31103">
-                      <dir
-                        name="include"/>
-                    </dir>
-                  </dir>
-                </dir>
-              </dir>
-            </dir>
-          </dir>
-        </dir>
-      </dir>
-      <dir
-        name="Windows Kits">
-        <dir
-          name="10">
-          <dir
-            name="Include">
-            <dir
-              name="10.0.19041.0">
-              <dir
-                name="ucrt"/>
-            </dir>
-          </dir>
-        </dir>
-      </dir>
-    </dir>
   </files>
   <languages>
     <language
@@ -261,7 +218,7 @@
     bracket_depth="256"
     cache_ast_files="false"
     c_std=""
-    compiler="Microsoft Visual C++"
+    compiler="GNU GCC"
     compiler_include_path="%include%"
     create_implicit_special_member_functions="false"
     create_references_in_assembly="true"
@@ -294,7 +251,7 @@
     use_case_insensitive_lookup_for_includes="false"
     compare_includes_by_content="false"
     analyze_headers_in_isolation="true"
-    use_clang="false"
+    use_clang="true"
     use_include_cache="true"
     merge_multiple_function_definitions="false"
     warning_level="NoWarnings"
