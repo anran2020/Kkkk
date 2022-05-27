@@ -35,7 +35,6 @@ void trayProtEnable(Timer *timer)
     ChnProtBuf *protBuf;
     Cell *cell;
     Cell *cellCri;
-    u8 idx;
 
     tray = Container(Tray, protEnaTmr, timer);
     trayProtMgr = &tray->trayProtMgr;
@@ -166,16 +165,20 @@ Ret chnProtReverse(Channel *chn)
                 }
             }
         }
-        else  /*暂时跟极简一样,todo,视客户要求改成类似并联*/
+        else
         {
             Cell *cell;
             Cell *cellCri;
+            BypsSeriesInd *seriesInd;
 
+            seriesInd = chn->bypsSeriesInd;
             for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++)
             {
-                if (cell->chnProtBuf.newVolCell < reverseVolCfg)
+                if (BitIsSet(seriesInd->runCell, cell->cellIdxInChn)
+                    && cell->chnProtBuf.newVolCell<reverseVolCfg)
                 {
-                    ret = Nok;
+                    BitClr(seriesInd->runCell, cell->cellIdxInChn);
+                    BitSet(seriesInd->stopedCell, cell->cellIdxInChn);
                     CcChkModify(cell->chnProtBuf.newCauseCode, Cc1Reverse);
                     if (chn->smplPres)
                     {
@@ -185,35 +188,10 @@ Ret chnProtReverse(Channel *chn)
                 }
             }
 
-            if (Nok == ret)
+            if (0 == seriesInd->runCell)
             {
+                ret = Nok;
                 tray->trayWarnPres = True;
-                if (ChnStaPause == chn->chnStateMed)
-                {
-                    chn->bypsSeriesInd->pausedCell = chn->bypsSeriesInd->startCell;
-                }
-                else
-                {
-                    chn->bypsSeriesInd->stopedCell = chn->bypsSeriesInd->startCell;
-                }
-                CcChkModify(chn->chnProtBuf.newCauseCode, Cc0SeriesTrig);
-                if (chn->smplPres)
-                {
-                    trayChnSmpl = &traySmpl->chnSmpl[chn->genIdxInTray];
-                    CcChkModify(trayChnSmpl->causeCode, Cc0SeriesTrig);
-                }
-                for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++)
-                {
-                    if (cell->chnProtBuf.newVolCell >= reverseVolCfg)
-                    {
-                        CcChkModify(cell->chnProtBuf.newCauseCode, Cc0SeriesTrig);
-                        if (chn->smplPres)
-                        {
-                            trayChnSmpl = &traySmpl->chnSmpl[cell->genIdxInTray];
-                            CcChkModify(trayChnSmpl->causeCode, Cc0SeriesTrig);
-                        }
-                    }
-                }
             }
         }
     }
@@ -235,7 +213,7 @@ void setTrayProtCause(Tray *tray, u16eCauseCode causeCode)
 void setChnNmlProt(Channel *chn, ChnProtBuf *chnProtBuf, u16eCauseCode causeCode)
 {
     CcChkModify(chnProtBuf->newCauseCode, causeCode);
-    if (NULL != chn->cell)
+    if (BoxTypeSeriesWoSw == chn->box->boxType)
     {
         CcChkModify(chn->chnProtBuf.newCauseCode, Cc0SeriesTrig);
     }
@@ -265,12 +243,7 @@ void setChnMixSubProt(Channel *chn, ChnProtBuf *chnProtBuf, u8eMixSubId mixSubId
 {
     BitSet(chnProtBuf->mixSubHpnBitmap, mixSubId);
     chnProtBuf->mixSubHpnSec[mixSubId] = sysTimeSecGet();
-    CcChkModify(chnProtBuf->newCauseCode, causeCode);
-
-    if (NULL != chn->cell)
-    {
-        CcChkModify(chn->chnProtBuf.newCauseCode, Cc0SeriesTrig);
-    }
+    setChnNmlProt(chn, chnProtBuf, causeCode);
     return;
 }
 
@@ -300,6 +273,73 @@ u32 resistanceCalc(Channel *chn, s32 vol01, s32 vol02, s32 current)
 void trayNpBigRiseRst(Tray *tray)
 {
     tray->trayProtMgr.npBigRiseCnt = 0;
+    return;
+}
+
+/*应周院长核实的特殊处理,需求来自adbt并适用全部*/
+/*基点电压小于-500mv且比较电压为正,则忽略闲时突升闲时波动闲时累加三项电压保护*/
+/*todo,,考虑加个配置,缺省配置为忽略*/
+b8 volProtIgnore(s32 baseVol, s32 crntVol)
+{
+    return (baseVol<-50000 && crntVol>0) ? True : False;
+}
+
+/*检查电芯的回路状态,目前只针对主通道运行态*/
+void chnCellLoopChk(Channel *chn)
+{
+    Cell *cell;
+    Cell *sentry;
+    BypsSeriesInd *seriesInd;
+    b8 loopErr;
+    
+    if (ChnStaRun != chn->chnStateMed)
+    {
+        return;
+    }
+
+    seriesInd = chn->bypsSeriesInd;
+    for (loopErr=False,cell=chn->cell,sentry=cell+chn->chnCellAmt; cell<sentry; cell++)
+    {
+        if (BitIsSet(seriesInd->runCell, cell->cellIdxInChn))
+        {
+            if (LowBypsSwOut == cell->bypsSwState)
+            {
+                if (seriesInd->loopErrCnt < LowStartExprCnt)
+                {
+                    seriesInd->loopErrCnt++;
+                    return;
+                }
+                loopErr = True;
+                CcChkModify(cell->chnProtBuf.newCauseCode, Cc1CellLoopStatus);
+            }
+        }
+        else
+        {
+            if (LowBypsSwOut != cell->bypsSwState)
+            {
+                if (seriesInd->loopErrCnt < LowStartExprCnt)
+                {
+                    seriesInd->loopErrCnt++;
+                    return;
+                }
+                loopErr = True;
+                CcChkModify(cell->chnProtBuf.newCauseCode, Cc1CellLoopStatus);
+            }
+        }
+    }
+
+    if (loopErr)
+    {
+        CcChkModify(chn->chnProtBuf.newCauseCode, Cc1CellLoopStatus);
+        for (cell=chn->cell,sentry=cell+chn->chnCellAmt; cell<sentry; cell++)
+        {
+            if (BitIsSet(seriesInd->startCell, cell->cellIdxInChn))
+            {
+                CcChkModify(cell->chnProtBuf.newCauseCode, Cc0SeriesTrig);
+            }
+        }
+    }
+    seriesInd->loopErrCnt = 0;
     return;
 }
 
@@ -474,7 +514,10 @@ void chnIdleVolRise0200(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtOb
     {
         if (dif > prot->protParam[0])
         {
-            setChnMixSubProt(chn, chnProtBuf, MixSubIdleVolBigRise1, Cc4IdleVolBigRise1);
+            if (!volProtIgnore(chnProtBuf->preVolCell, chnProtBuf->newVolCell))
+            {
+                setChnMixSubProt(chn, chnProtBuf, MixSubIdleVolBigRise1, Cc4IdleVolBigRise1);
+            }
         }
     }
 
@@ -482,7 +525,10 @@ void chnIdleVolRise0200(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtOb
     {
         if (dif > prot->protParam[2])
         {
-            setChnMixSubProt(chn, chnProtBuf, MixSubIdleVolBigRise2, Cc4IdleVolBigRise2);
+            if (!volProtIgnore(chnProtBuf->preVolCell, chnProtBuf->newVolCell))
+            {
+                setChnMixSubProt(chn, chnProtBuf, MixSubIdleVolBigRise2, Cc4IdleVolBigRise2);
+            }
         }
     }
 
@@ -491,11 +537,14 @@ void chnIdleVolRise0200(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtOb
         cnt = prot->paramEnable & 1<<5 ? prot->protParam[5] : 1;
         if (dif > prot->protParam[4])
         {
-            chnProtBuf->idleVolCtnuSmlRiseCnt++;
-            if (chnProtBuf->idleVolCtnuSmlRiseCnt >= cnt)
+            if (!volProtIgnore(chnProtBuf->preVolCell, chnProtBuf->newVolCell))
             {
-                setChnMixSubProt(chn, chnProtBuf, MixSubIdleVolCtnuSmlRise, Cc4IdleVolCtnuSmlRise);
-                chnProtBuf->idleVolCtnuSmlRiseCnt = 0;
+                chnProtBuf->idleVolCtnuSmlRiseCnt++;
+                if (chnProtBuf->idleVolCtnuSmlRiseCnt >= cnt)
+                {
+                    setChnMixSubProt(chn, chnProtBuf, MixSubIdleVolCtnuSmlRise, Cc4IdleVolCtnuSmlRise);
+                    chnProtBuf->idleVolCtnuSmlRiseCnt = 0;
+                }
             }
         }
         else
@@ -851,7 +900,7 @@ void chnQuietVolFluct0401(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, Prot
 }
 
 /*电压下降,静置工步,因子*/
-/*基准时间以后的采样,与工步首条采样,压降大于设定则触发*/
+/*基准时间的采样为基准,后续采样电压与基准电压,压降大于设定则触发*/
 void chnQuietVolDown0402(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtObj *prot)
 {
     if (!chnBeInRun(chn, chnProtBuf) || StepTypeQuiet!=chn->chnStepType)
@@ -864,6 +913,14 @@ void chnQuietVolDown0402(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtO
         return;
     }
 
+    if (BitIsSet(prot->paramEnable, 0))
+    {
+        if (chn->stepRunTime < prot->protParam[0])
+        {
+            return;
+        }
+    }
+
     if (!chnProtBuf->quietVolDownBaseValid)
     {
         chnProtBuf->quietVolDownBase = chnProtBuf->newVolCell;
@@ -871,19 +928,13 @@ void chnQuietVolDown0402(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtO
         return;
     }
 
-    if (!(prot->paramEnable & 1<<0) || chn->stepRunTime>prot->protParam[0])
+    if (BitIsSet(prot->paramEnable, 1))  /**/
     {
-        if (prot->paramEnable & 1<<1)  /**/
+        if (chnProtBuf->newVolCell < chnProtBuf->quietVolDownBase)
         {
-            if (chnProtBuf->newVolCell < chnProtBuf->quietVolDownBase)
+            if (chnProtBuf->quietVolDownBase-chnProtBuf->newVolCell > prot->protParam[1])
             {
-                s32 dif;
-
-                dif = chnProtBuf->quietVolDownBase - chnProtBuf->newVolCell;
-                if (dif > prot->protParam[1])
-                {
-                    setChnMixSubProt(chn, chnProtBuf, MixSubQuietVolDown, Cc4QuietVolDown);
-                }
+                setChnMixSubProt(chn, chnProtBuf, MixSubQuietVolDown, Cc4QuietVolDown);
             }
         }
     }
@@ -1176,7 +1227,7 @@ void chnCccVolDownAbnm0408(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, Pro
     if (!chnProtBuf->cccVolDownAbnmValid)
     {
         if (!(prot->paramEnable & 1<<0)
-            || chn->capStep>=prot->protParam[0]&&chn->capStep<=prot->protParam[1])
+            || chn->capStep>=(u32)prot->protParam[0] && chn->capStep<=(u32)prot->protParam[1])
         {
             chnProtBuf->cccVolDownAbnmValid = True;
             chnProtBuf->cccVolDownAbnmVolBase = chnProtBuf->newVolCell;
@@ -1189,9 +1240,9 @@ void chnCccVolDownAbnm0408(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, Pro
 
     if (prot->paramEnable & 1<<0)
     {
-        if (chnProtBuf->cccVolDownAbnmCapMin != prot->protParam[0])
+        if (chnProtBuf->cccVolDownAbnmCapMin != (u32)prot->protParam[0])
         {
-            if (chn->capStep>=prot->protParam[0]&&chn->capStep<=prot->protParam[1])
+            if (chn->capStep>=(u32)prot->protParam[0] && chn->capStep<=(u32)prot->protParam[1])
             {
                 chnProtBuf->cccVolDownAbnmVolBase = chnProtBuf->newVolCell;
                 chnProtBuf->cccVolDownAbnmCapMin = prot->protParam[0];
@@ -1201,7 +1252,7 @@ void chnCccVolDownAbnm0408(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, Pro
         }
         else
         {
-            if (chn->capStep > prot->protParam[1])
+            if (chn->capStep > (u32)prot->protParam[1])
             {
                 chnProtBuf->cccVolDownAbnmValid = False;
                 return;
@@ -1266,7 +1317,7 @@ void chnCccVolRiseRate0409(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, Pro
 
     if (prot->paramEnable & 1<<0)
     {
-        if (chn->capStep<=prot->protParam[0] || chn->capStep>prot->protParam[1])
+        if (chn->capStep<=(u32)prot->protParam[0] || chn->capStep>(u32)prot->protParam[1])
         {
             return;
         }
@@ -1320,7 +1371,7 @@ void chnCcVolBigDown040a(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtO
 
     if (prot->paramEnable & 1<<0)
     {
-        if (chn->capStep<prot->protParam[0] || chn->capStep>prot->protParam[1])
+        if (chn->capStep<(u32)prot->protParam[0] || chn->capStep>(u32)prot->protParam[1])
         {
             chnProtBuf->ccdcVolBigDownValid = False;
             return;
@@ -1329,7 +1380,7 @@ void chnCcVolBigDown040a(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtO
 
     if (prot->paramEnable & 1<<3)  /*延时*/
     {
-        if (chn->stepRunTime <= prot->protParam[3])
+        if (chn->stepRunTime <= (u32)prot->protParam[3])
         {
             return;
         }
@@ -1389,7 +1440,7 @@ void chnStepCapLmt040b(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtObj
 
     if (prot->paramEnable & 1<<0)
     {
-        if (chn->capStep > prot->protParam[0])
+        if (chn->capStep > (u32)prot->protParam[0])
         {
             if (StepTypeCCC == chn->chnStepType)
             {
@@ -1421,7 +1472,7 @@ void chnStepCapLmt040b(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtObj
 
     if ((prot->paramEnable & 1<<1) && ChnStaLowNmlEnd==chn->chnStateMed)
     {
-        if (chn->capStep < prot->protParam[1])
+        if (chn->capStep < (u32)prot->protParam[1])
         {
             if (StepTypeCCC == chn->chnStepType)
             {
@@ -1654,7 +1705,7 @@ void chnCcdVolRiseAbnm040f(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, Pro
     if (!chnProtBuf->ccdVolRiseAbnmValid)
     {
         if (!(prot->paramEnable & 1<<0)
-            || chn->capStep>=prot->protParam[0]&&chn->capStep<=prot->protParam[1])
+            || chn->capStep>=(u32)prot->protParam[0] && chn->capStep<=(u32)prot->protParam[1])
         {
             chnProtBuf->ccdVolRiseAbnmValid = True;
             chnProtBuf->ccdVolRiseAbnmVolBase = chnProtBuf->newVolCell;
@@ -1667,9 +1718,9 @@ void chnCcdVolRiseAbnm040f(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, Pro
 
     if (prot->paramEnable & 1<<0)
     {
-        if (chnProtBuf->ccdVolRiseAbnmCapMin != prot->protParam[0])
+        if (chnProtBuf->ccdVolRiseAbnmCapMin != (u32)prot->protParam[0])
         {
-            if (chn->capStep>=prot->protParam[0]&&chn->capStep<=prot->protParam[1])
+            if (chn->capStep>=(u32)prot->protParam[0] && chn->capStep<=(u32)prot->protParam[1])
             {
                 chnProtBuf->ccdVolRiseAbnmVolBase = chnProtBuf->newVolCell;
                 chnProtBuf->ccdVolRiseAbnmCapMin = prot->protParam[0];
@@ -1679,7 +1730,7 @@ void chnCcdVolRiseAbnm040f(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, Pro
         }
         else
         {
-            if (chn->capStep > prot->protParam[1])
+            if (chn->capStep > (u32)prot->protParam[1])
             {
                 chnProtBuf->ccdVolRiseAbnmValid = False;
                 return;
@@ -1796,7 +1847,7 @@ void chnCvcCurRiseAbnm0411(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, Pro
     if (!chnProtBuf->cvcCurRiseAbnmValid)
     {
         if (!(prot->paramEnable & 1<<0)
-            || chn->capStep>=prot->protParam[0]&&chn->capStep<=prot->protParam[1])
+            || chn->capStep>=(u32)prot->protParam[0] && chn->capStep<=(u32)prot->protParam[1])
         {
             chnProtBuf->cvcCurRiseAbnmValid = True;
             chnProtBuf->cvcCurRiseAbnmCurBase = chnProtBuf->newCur;
@@ -1809,9 +1860,9 @@ void chnCvcCurRiseAbnm0411(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, Pro
 
     if (prot->paramEnable & 1<<0)
     {
-        if (chnProtBuf->cvcCurRiseAbnmCapMin != prot->protParam[0])
+        if (chnProtBuf->cvcCurRiseAbnmCapMin != (u32)prot->protParam[0])
         {
-            if (chn->capStep>=prot->protParam[0]&&chn->capStep<=prot->protParam[1])
+            if (chn->capStep>=(u32)prot->protParam[0] && chn->capStep<=(u32)prot->protParam[1])
             {
                 chnProtBuf->cvcCurRiseAbnmCurBase = chnProtBuf->newCur;
                 chnProtBuf->cvcCurRiseAbnmCapMin = prot->protParam[0];
@@ -1821,7 +1872,7 @@ void chnCvcCurRiseAbnm0411(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, Pro
         }
         else
         {
-            if (chn->capStep > prot->protParam[1])
+            if (chn->capStep > (u32)prot->protParam[1])
             {
                 chnProtBuf->cvcCurRiseAbnmValid = False;
                 return;
@@ -1911,7 +1962,7 @@ void chnCvcCurBigRise0412(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, Prot
 
     if (prot->paramEnable & 1<<0)
     {
-        if (chn->capStep<=prot->protParam[0] || chn->capStep>prot->protParam[1])
+        if (chn->capStep<=(u32)prot->protParam[0] || chn->capStep>(u32)prot->protParam[1])
         {
             return;
         }
@@ -1959,7 +2010,7 @@ void chnCvcCurBigRise0412(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, Prot
     return;
 }
 
-/*电压回检,静置工步,非因子*/
+/*电压回检1--主压与探针,静置工步,非因子*/
 void chnQuietVolChkBack0413(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtObj *prot)
 {
     s32 dif;
@@ -1980,6 +2031,33 @@ void chnQuietVolChkBack0413(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, Pr
         if (dif > prot->protParam[0])
         {
             setChnNmlProt(chn, chnProtBuf, Cc1QuietVolChkBack);
+        }
+    }
+
+    return;
+}
+
+/*电压回检2--主压与端口,静置工步,仅限并联,非因子*/
+void chnQuietVolChkBack0414(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtObj *prot)
+{
+    s32 dif;
+    
+    if (!chnBeInRun(chn, chnProtBuf) || StepTypeQuiet!=chn->chnStepType || NULL!=chn->cell)
+    {
+        return;
+    }
+
+    if (!chnProtBuf->newPowerBeValid)
+    {
+        return;
+    }
+
+    if (prot->paramEnable & 1<<0)  /**/
+    {
+        dif = AbsDifVal(chnProtBuf->newVolCell, chnProtBuf->newVolPort);
+        if (dif > prot->protParam[0])
+        {
+            setChnNmlProt(chn, chnProtBuf, Cc1QuietVolChkBack2);
         }
     }
 
@@ -2021,7 +2099,7 @@ void flowChnTmprLmt0501(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtOb
     return;
 }
 
-/*过充,非因子但影响全盘*/
+/*过充,非因子*/
 void flowChgOvld0502(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtObj *prot)
 {
     if (!chnBeInRun(chn, chnProtBuf) || (StepTypeCCC!=chn->chnStepType
@@ -2052,7 +2130,7 @@ void flowChgOvld0502(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtObj *
         {
             capCrntTtl += chn->capStep;
         }
-        if (capCrntTtl > prot->protParam[1])
+        if (capCrntTtl > (u32)prot->protParam[1])
         {
             setChnNmlProt(chn, chnProtBuf, Cc2FlowChnChgOvldCap);
         }
@@ -2072,7 +2150,7 @@ void flowChgOvld0502(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtObj *
     return;
 }
 
-/*过放,非因子但影响全盘*/
+/*过放,非因子*/
 void flowDisChgOvld0503(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtObj *prot)
 {
     if (!chnBeInRun(chn, chnProtBuf) || (StepTypeCCD!=chn->chnStepType
@@ -2097,13 +2175,13 @@ void flowDisChgOvld0503(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtOb
     if (prot->paramEnable & 1<<1)  /*容量上限*/
     {
         u32 capCrntTtl;
-        
+
         capCrntTtl = chn->capFlowCrnt;
         if (ChnStaRun == chn->chnStateMed)
         {
             capCrntTtl += chn->capStep;
         }
-        if (capCrntTtl > prot->protParam[1])
+        if (capCrntTtl > (u32)prot->protParam[1])
         {
             setChnNmlProt(chn, chnProtBuf, Cc2FlowChnDisChgOvldCap);
         }
@@ -2123,7 +2201,7 @@ void flowDisChgOvld0503(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtOb
     return;
 }
 
-/*接触,非因子但影响全盘*/
+/*接触,非因子*/
 /*极耳不良与接触阻抗与串并联无关*/
 /*接触不良与回路阻抗区分串并联*/
 void flowContactChk0504(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtObj *prot)
@@ -2161,7 +2239,39 @@ void flowContactChk0504(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, ProtOb
             }
         }
     }
-    else if (chnProtBuf == &chn->cell->chnProtBuf) /*只计算第1个电芯就行*/
+    else if (NULL != chn->bypsSeriesInd)  /*旁串*/
+    {
+        Cell *cell;
+        Cell *cri;
+        s32 cellVolTtl;
+
+        for (cellVolTtl=0,cell=chn->cell,cri=cell+chn->chnCellAmt; cell<cri; cell++)
+        {
+            if (LowBypsSwOut != cell->bypsSwState)
+            {
+                cellVolTtl += cell->chnProtBuf.newVolCell;
+            }
+        }
+
+        if (prot->paramEnable & 1<<0)  /*接触不良压差电芯端口*/
+        {
+            dif = AbsDifVal(cellVolTtl, chnProtBuf->newVolPort);
+            if (dif > prot->protParam[0])
+            {
+                setChnNmlProt(chn, &chn->chnProtBuf, Cc2FlowChnVolCell2Port);
+            }
+        }
+
+        if (StepTypeQuiet!=chn->chnStepType && (prot->paramEnable & 1<<3))  /*回路阻抗*/
+        {
+            resis = resistanceCalc(chn, chnProtBuf->newVolPort, cellVolTtl, chn->chnProtBuf.newCur);
+            if (resis > prot->protParam[3])
+            {
+                setChnNmlProt(chn, &chn->chnProtBuf, Cc2FlowChnLoopResis);
+            }
+        }
+    }
+    else if (chnProtBuf == &chn->cell->chnProtBuf) /*极简串联只计算第1个电芯就行*/
     {
         Cell *cell;
         Cell *cri;
@@ -2262,8 +2372,11 @@ void flowIdleVolIntvlRise0505(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, 
         dif = chnProtBuf->newVolCell - chnProtBuf->flowIdleVolIntvlRiseVolBase;
         if (dif > prot->protParam[1])
         {
-            setTrayProtCause(tray, Cc0TrayTrig);
-            setChnMixSubProt(chn, chnProtBuf, MixSubFlowIdleVolIntvlRiseUpLmt, Cc4FlowIdleVolIntvlRiseUpLmt);
+            if (!volProtIgnore(chnProtBuf->flowIdleVolIntvlRiseVolBase, chnProtBuf->newVolCell))
+            {
+                setTrayProtCause(tray, Cc0TrayTrig);
+                setChnMixSubProt(chn, chnProtBuf, MixSubFlowIdleVolIntvlRiseUpLmt, Cc4FlowIdleVolIntvlRiseUpLmt);
+            }
         }
     }
 
@@ -2486,7 +2599,10 @@ void FlowIdleVolTtlRise050a(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf, Pr
         dif = chnProtBuf->newVolCell - chnProtBuf->idleVolBase;
         if (dif > prot->protParam[0])
         {
-            setChnMixSubProt(chn, chnProtBuf, MixSubFlowIdleVolRiseTtl, Cc4FlowIdleVolRiseTtl);
+            if (!volProtIgnore(chnProtBuf->idleVolBase, chnProtBuf->newVolCell))
+            {
+                setChnMixSubProt(chn, chnProtBuf, MixSubFlowIdleVolRiseTtl, Cc4FlowIdleVolRiseTtl);
+            }
         }
     }
 
@@ -2820,6 +2936,9 @@ void stepProtWork(Tray *tray, Channel *chn, ChnProtBuf *chnProtBuf)
             case 0x0413:
                 chnQuietVolChkBack0413(tray, chn, chnProtBuf, protObj);
                 break;
+            case 0x0414:
+                chnQuietVolChkBack0414(tray, chn, chnProtBuf, protObj);
+                break;
             default:
                 break;
         }
@@ -3008,6 +3127,11 @@ void chnProtWork(Channel *chn)
     u32 crntSec;
 
     tray = chn->box->tray;
+    if (tray->protDisable)
+    {
+        return;
+    }
+
     trayProtMgr = &tray->trayProtMgr;
     crntSec = sysTimeSecGet();
     if (NULL == chn->cell)
@@ -3023,6 +3147,11 @@ void chnProtWork(Channel *chn)
     }
     else
     {
+        if (NULL != chn->bypsSeriesInd)
+        {
+            chnCellLoopChk(chn);
+        }
+
         for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++)
         {
             chnProtBuf = &cell->chnProtBuf;
@@ -3041,6 +3170,10 @@ void chnProtWork(Channel *chn)
     {
         tray->trayWarnPres = True;
         chnStopByProt(chn, CcNone==trayProtMgr->trayCauseNew ? False : True);
+    }
+    else if (NULL != chn->bypsSeriesInd)
+    {
+        bypsSeriesCellProt(chn);
     }
     return;
 }

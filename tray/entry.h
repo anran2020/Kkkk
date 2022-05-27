@@ -101,6 +101,14 @@ typedef struct
     b8 idleProtEna;  /*临时方案,压合后流程前不算闲时,不启动的通道不进闲时*/
 }ChnProtBuf;
 
+/*循环运行数据*/
+typedef struct
+{
+    u8 loopStepId; /*循环工步自身工步ID*/
+    u8 jumpStepId; /*跳转到哪个工步ID,与上位机收发时,该字段保留*/
+    u16 jumpAmt;   /*循环剩余次数*/
+}LoopDscr;
+
 /*串联子电芯*/
 typedef struct cellTag
 {
@@ -113,10 +121,17 @@ typedef struct cellTag
     u32 cellCapCtnu;   /*续接容量前工步已跑容量,旁路串联有效*/
     u32 cellCapFlowCrnt;   /*累积容量，不含当前工步,旁路串联有效*/
     u32 cellCapStep;   /*当前工步容量,含续接,旁路串联有效*/
+    u32 cellCapLow;   /*下位机上送,旁路串联有效*/
+    u32 cellCapChg;   /*充电总,含累积容量,不含当前工步容量,旁路串联有效*/
+    u32 cellCapDisChg;   /*放电总,含累积容量,不含当前工步容量,旁路串联有效*/
     ChnProtBuf chnProtBuf;
     u32 cellStepRunTime;  /*旁路串联有效*/
-    u8eLowBypsSwSta swState;  /*旁路串联有效*/
-    u8 cellCause;  /*旁路串联有效*/
+    LoopDscr cellLoopDscr[LoopAmtMax];  /*循环工步维护,旁路串联有效*/
+    u8eLowBypsSwSta bypsSwState;  /*旁路串联有效*/
+    u8 cellLowCause;  /*旁路串联有效*/
+    u8 cellUpStepId;  /*旁路串联有效,未必与主通道相同*/
+    u8eStepType cellUpStepType;  /*旁路串联有效*/
+    u8eMedChnState cellStateMed;  /*旁路串联有效*/
 }Cell;
 
 /*带旁路切换板的串联的控制数据*/
@@ -124,26 +139,20 @@ typedef struct
 {
     b8 needStart;   /*仅用于启动/续接时筛选主通道,不参与流程*/
     b8 hasCtnuStepId;  /*用于续接时查找工步号*/
-    u8 rsvd[2];
+    u8 loopErrCnt;  /*电芯回路不匹配计数*/
+    u8 rsvd;
     u32 startCell;  /*上位机启动或续接的电芯*/
     u32 runCell;   /*预期切入运行的电芯,保护逻辑时以通道运行态为前提*/
     u32 waitCell;   /*等待参与流程的电芯*/
-    u32 endingCell;  /*正在工步截止的电芯,最后一条运行数据,是runCell的特殊子集*/
-    u32 nmlEndCell;  /*正常已工步截止的电芯,以通道运行态为前提*/
+    u32 endingCell;  /*正在正常截止的电芯,最后一条运行数据,是runCell的特殊子集*/
+    u32 nmlEndCell;  /*已正常截止的电芯,以通道运行态为前提*/
     u32 stopedCell;  /*保护或指令停止的电芯*/
     u32 pausedCell;  /*保护或指令暂停的电芯*/
     u32 stopingCell; /*一次命令下位机截止的电芯,流程内保持增量*/
+    u32 medProtCell;  /*中位机保护的电芯,用于过滤原因码*/
     u32 idleSwCell;   /*仅用于空闲时切入切出,不参与流程*/
-    u32 idleCutInCell;   /*空闲时切入记录,除判断闲时保护外不参与流程*/
+    u32 idleSwInCell;   /*空闲时切入记录,除判断闲时保护外不参与流程*/
 }BypsSeriesInd;
-
-/*循环运行数据*/
-typedef struct
-{
-    u8 loopStepId; /*循环工步自身工步ID*/
-    u8 jumpStepId; /*跳转到哪个工步ID,与上位机收发时,该字段保留*/
-    u16 jumpAmt;   /*循环剩余次数*/
-}LoopDscr;
 
 /*主通道,含并联*/
 typedef struct channelTag
@@ -159,13 +168,14 @@ typedef struct channelTag
     u8eChgType chgTypePre;  /*记录充放电类型,用于累积*/
     u8eStepSubType stepSubType;
     u8eMedChnState chnStateMed;
-    u8 lowCause;  /*下位机上送的异常码*/
+    u8 chnLowCause;  /*下位机上送的异常码*/
     u8eStepType upStepType;  /*给上位机的工步类型,同上,跟着工步号走*/
     u8 dynStaCnt;  /*不稳定状态计数,用于防呆,进入非稳定态时清零*/
     u8 noDataCnt;  /*采样有回复但无数据次数*/
     b8 smplPres;  /*托盘采样有效,采样生成后清零,是否产生通道数据*/
     b8 beWiNp;  /*是否占用了负压资源*/
     u16 tmprPower;  /*功率管温度*/
+    b8 stepCapCalced;  /*工步的容量是否已经参与累积*/
     struct powerBoxTag *box;     /*所属电源箱*/
     s32 volInner;  /*内部电压*/
     s32 volBus;  /*母线电压*/
@@ -230,6 +240,7 @@ typedef struct powerBoxTag
     u8 reTxCtrlCnt;  /*重传次数,不含第一次*/
     b8 boxHasSmplTry;  /*托盘采样有效,记录是否尝试采样,托盘采样生成后清零*/
     b8 moreSmplPres;  /*是否2次采样,应答或超时清零,当下机制最多采2次*/
+    u8 reTxConnCnt;  /*联机计数,用于等待主下收集从下信息*/
     u32 maxVol;
     u32 maxCur;
     u8 boxChnAmt;  /*实际使用通道数量,不含预留*/
@@ -535,7 +546,7 @@ typedef struct
     u8 npHigh;  /*高负压0--忽略,1--关闭,2--打开*/
     u8 npLow;  /*低负压0--忽略,1--关闭,2--打开*/
     u8 vacumBrk;  /*破真空0--忽略,1--关闭,2--打开*/
-    u8 npRatio;  /*比例阀0--忽略,1--关闭,2--打开*/
+    u8 npGate;  /*导通阀0--忽略,1--关闭,2--打开*/
     u8 fixtPower;  /*工装供电0--忽略,1--关闭,2--打开*/
     s16 npVal;  /*负压值,区分正负,npRatio打开有效*/
 }NdbdMcuCtrl;

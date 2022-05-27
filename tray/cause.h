@@ -66,6 +66,7 @@ typedef u16 u16eCauseCode;
 #define CcLowCvVolEnd  0x0005
 #define CcFlowPauseEnd 0x0006
 #define CcFlowStopEnd  0x0007  /*收到命令而截止*/
+#define CcFlowJumpEnd  0x0008  /*跳转而截止*/
 #define Cclv0Base 0x0400   /*托盘(不涉组合)*/
 #define Cclv1Base 0x0800  /*通道(不涉组合不涉全盘)*/
 #define Cclv2Base 0x0a00  /*通道(不涉组合但涉全盘)*/
@@ -76,7 +77,7 @@ typedef u16 u16eCauseCode;
 #define CcChkModify(oldCc, newCc) \
 do \
 { \
-    if (CcNone==(oldCc) || (oldCc)<CcBaseGet(newCc)) \
+    if ((oldCc) < CcBaseGet(newCc)) \
     { \
         (oldCc) = (newCc); \
     } \
@@ -163,6 +164,8 @@ do \
 #define Cc1DvVolOfst 0x083d  /*恒压放电电压超差*/
 #define Cc1DvCurRiseAbnm 0x083e  /*恒压放电电流上升异常点*/
 #define Cc1DvCurBigRise 0x083f  /*恒压放电电流突升*/
+#define Cc1CellLoopStatus 0x0840  /*电芯回路状态不符*/
+#define Cc1QuietVolChkBack2 0x0841  /*电压回检2即电流端口双压差*/
 
 /*(非因子)通道保护,但涉全盘,优先级高于前者*/
 #define Cc2BusyChnTmprLowLmt 0x0a01  /*忙时通道温度下限*/

@@ -111,7 +111,7 @@ void setUartBlockBuf(UartBlockCmdBuf *blockBuf, u8 trayIdx, u16 upCmdId, u8 cmmu
 }
 
 /*适配有点拖沓,有时间再整合*/
-void uartNdbdMcuCtrlAdd(u8 trayIdx, u8eNdbdCtrlType type, s16 oprVal, s16 npVal)
+void uartNdbdMcuCtrlAdd(u8 trayIdx, u8eNdbdCtrlType type, s16 oprVal)
 {
     NdbdMcu *ndbdMcu;
     NdbdMcuCtrl *ctrl;
@@ -132,8 +132,7 @@ void uartNdbdMcuCtrlAdd(u8 trayIdx, u8eNdbdCtrlType type, s16 oprVal, s16 npVal)
     }
     else if (NdbdSetRatioVal == type)
     {
-        ctrl->npRatio = oprVal;
-        ctrl->npVal = npVal;
+        ctrl->npVal = oprVal;
     }
     else if (NdbdSetBrkVacum == type)
     {
@@ -151,8 +150,9 @@ void uartNdbdMcuCtrlAdd(u8 trayIdx, u8eNdbdCtrlType type, s16 oprVal, s16 npVal)
     {
         ctrl->smokeAct = oprVal + 1;
     }
-    else if (NdbdSetSwValve == type)  /*目前针床主控没有*/
+    else if (NdbdSetNpGate == type)  /*目前针床主控没有*/
     {
+        ctrl->npGate = oprVal;
     }
 
     return;
@@ -185,7 +185,7 @@ void uartNdbdMcuCtrlTx(Uart *uart, NdbdMcu *ndbdMcu)
     ctrlCmd->npHigh = ctrl->npHigh;
     ctrlCmd->npLow = ctrl->npLow;
     ctrlCmd->vacumBrk = ctrl->vacumBrk;
-    ctrlCmd->npRatio = ctrl->npRatio;
+    ctrlCmd->npGate = ctrl->npGate;
     ctrlCmd->npVal = ctrl->npVal;
 
     uartTxMsg(uart, buf);
@@ -495,9 +495,9 @@ void uartExprCtrlAck(Timer *timer)
         {
             ndbdMcu->ctrlWaitTx.ctrl.fixtPower = ctrlWaitAckBak.fixtPower;
         }
-        if (ctrlWaitAckBak.npRatio)
+        if (ctrlWaitAckBak.npGate)
         {
-            ndbdMcu->ctrlWaitTx.ctrl.npRatio = ctrlWaitAckBak.npRatio;
+            ndbdMcu->ctrlWaitTx.ctrl.npGate = ctrlWaitAckBak.npGate;
             ndbdMcu->ctrlWaitTx.ctrl.npVal = ctrlWaitAckBak.npVal;
         }
 
@@ -747,6 +747,26 @@ void uartMsgSmplAck(Uart *uart, u8 actAddr, u8 *pld, u16 len)
             mem2Copy(&devMgr->genCellTmpr[tmprSmpl->genCellTmprIdx], tmprSmplData->tmprVal, amount*2);
         }
 
+    #ifdef Fd3CapSpec
+        /*福鼎3容量一体机特例版本对接温度盒,,todo,,梳理配置文件后统一算法*/
+        /*两块温度板,第一块库温,第二块水温*/
+        if (2 == tmprSmplAck->tmprSmplGrpAmt)
+        {
+            u16 dstIdx;
+
+            tmprSmplData = (TmprSmplData *)(tmprSmplData->tmprVal+Align16(tmprSmplData->tmprSmplChnAmt));
+            if (tmprSmpl->actAddr % 2)  /*水温*/
+            {
+                dstIdx = 1==tmprSmpl->actAddr ? 0 : 2;
+                mem2Copy(&devMgr->genSlotWaterTmpr[dstIdx], tmprSmplData->tmprVal, 4);
+            }
+            else
+            {
+                dstIdx = 0==tmprSmpl->actAddr ? 0 : tmprSmpl->tmprAmt4Loc;
+                mem2Copy(&devMgr->genSlotTmpr[dstIdx], tmprSmplData->tmprVal, tmprSmpl->tmprAmt4Loc*2);
+            }
+        }
+    #else
         /*以下适用于水温后面跟库温的情况,,todo,,通用算法还待调整*/
         if (2 == tmprSmplAck->tmprSmplGrpAmt)
         {
@@ -777,6 +797,7 @@ void uartMsgSmplAck(Uart *uart, u8 actAddr, u8 *pld, u16 len)
                 mem2Copy(&devMgr->genSlotTmpr[tmprSmpl->genSlotTmprIdx], tmprSmplData->tmprVal+slotTmprOfst, amount*2);
             }
         }
+    #endif
     }
     else /*UartNdbdMcu==uartCmmnAck->devType*/
     {
@@ -803,7 +824,7 @@ void uartMsgSmplAck(Uart *uart, u8 actAddr, u8 *pld, u16 len)
         ndbdData->status[NdbdSenFowTouch] = BitVal(smplAck->sensorBitMap, 2);
         ndbdData->status[NdbdSenBackTouch] = BitVal(smplAck->sensorBitMap, 3);
         ndbdData->status[NdbdStaWorkMode] = BitVal(smplAck->sensorBitMap, 4);
-        ndbdData->status[NdbdSenSwValve] = BitVal(smplAck->sensorBitMap, 5);
+        ndbdData->status[NdbdSenNpGate] = BitVal(smplAck->sensorBitMap, 5);
         ndbdData->status[NdbdSenBrkVacum] = BitVal(smplAck->sensorBitMap, 6);
         ndbdData->status[NdbdSenFireDoorUp] = BitVal(smplAck->sensorBitMap, 7);
         ndbdData->status[NdbdSenFireDoorDown] = BitVal(smplAck->sensorBitMap, 8);
@@ -894,7 +915,7 @@ void ndbdMcuCtrlRst(NdbdMcuCtrl *ndbdMcuCtrl)
     ndbdMcuCtrl->npHigh = 0;
     ndbdMcuCtrl->npLow = 0;
     ndbdMcuCtrl->vacumBrk = 0;
-    ndbdMcuCtrl->npRatio = 0;
+    ndbdMcuCtrl->npGate = 0;
     ndbdMcuCtrl->fixtPower = 0;
     return;
 }

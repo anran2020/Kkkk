@@ -224,11 +224,11 @@ u16eRspCode upFlowStepChk(UpFlowCmd *cmd, u16 pldLen)
         || cmd->stepSeq+cmd->stepAmt > cmd->stepAmtTtl
         || cmd->chnAmt > dev->tray[cmd->trayIdx].trayChnAmt)
     {
-        recvCtrlFree(cmd->trayIdx);
+        recvCtrlFree(tray);
         return RspParam;
     }
 
-    ctrl = recvCtrlGet(cmd->trayIdx);
+    ctrl = tray->flowRecvCtrl;
     if (NULL == ctrl)  /*必是单包或多包之首包*/
     {
         Channel *chn;
@@ -284,7 +284,7 @@ u16eRspCode upFlowStepChk(UpFlowCmd *cmd, u16 pldLen)
             || ctrl->chnAmt != cmd->chnAmt
             || memcmp(ctrl->chnIdx, cmd->chnId, cmd->chnAmt*2))
         {
-            recvCtrlFree(cmd->trayIdx);
+            recvCtrlFree(tray);
             return RspMultiSeq;
         }
         else if (ctrl->offsetHope != cmd->stepSeq)
@@ -295,7 +295,7 @@ u16eRspCode upFlowStepChk(UpFlowCmd *cmd, u16 pldLen)
             }
             else
             {
-                recvCtrlFree(cmd->trayIdx);
+                recvCtrlFree(tray);
                 return RspMultiSeq;
             }
         }
@@ -306,7 +306,7 @@ u16eRspCode upFlowStepChk(UpFlowCmd *cmd, u16 pldLen)
     {
         if (step->stepId!=cmd->stepSeq+idx || Ok!=upStepChk(cmd, step))
         {
-            recvCtrlFree(cmd->trayIdx);
+            recvCtrlFree(tray);
             return RspParam;
         }
     }
@@ -341,11 +341,11 @@ u16eRspCode upTrayProtChk(UpProtGenCmd *cmd, u16 pldLen)
     if (cmd->protAmt>MaxProtTrans || cmd->protSeq+cmd->protAmt>cmd->protAmtTtl
         || (0!=cmd->mixProtAmt && 0!=cmd->protSeq))
     {
-        recvCtrlFree(cmd->trayIdx);
+        recvCtrlFree(tray);
         return RspParam;
     }
 
-    ctrl = recvCtrlGet(cmd->trayIdx);
+    ctrl = tray->flowRecvCtrl;
     if (NULL == ctrl)  /*必是单包或多包之首包*/
     {
         Channel *chn;
@@ -377,7 +377,7 @@ u16eRspCode upTrayProtChk(UpProtGenCmd *cmd, u16 pldLen)
         if (ctrl->recvMsgId != UpCmdIdManuProtGen
             || ctrl->total!=cmd->protAmtTtl || 0==cmd->protAmt)
         {
-            recvCtrlFree(cmd->trayIdx);
+            recvCtrlFree(tray);
             return RspMultiSeq;
         }
         else if (ctrl->offsetHope != cmd->protSeq)
@@ -388,7 +388,7 @@ u16eRspCode upTrayProtChk(UpProtGenCmd *cmd, u16 pldLen)
             }
             else
             {
-                recvCtrlFree(cmd->trayIdx);
+                recvCtrlFree(tray);
                 return RspMultiSeq;
             }
         }
@@ -418,11 +418,11 @@ u16eRspCode upStepProtChk(UpProtStepCmd *cmd, u16 pldLen)
     if (cmd->protAmt>MaxProtTrans || cmd->protSeq+cmd->protAmt>cmd->protAmtTtl
         || cmd->chnAmt > dev->tray[cmd->trayIdx].trayChnAmt)
     {
-        recvCtrlFree(cmd->trayIdx);
+        recvCtrlFree(tray);
         return RspParam;
     }
 
-    ctrl = recvCtrlGet(cmd->trayIdx);
+    ctrl = tray->flowRecvCtrl;
     if (NULL == ctrl)  /*必是单包或多包之首包*/
     {
         Channel *chn;
@@ -478,7 +478,7 @@ u16eRspCode upStepProtChk(UpProtStepCmd *cmd, u16 pldLen)
             || ctrl->chnAmt != cmd->chnAmt
             || memcmp(ctrl->chnIdx, cmd->chnId, cmd->chnAmt*2))
         {
-            recvCtrlFree(cmd->trayIdx);
+            recvCtrlFree(tray);
             return RspMultiSeq;
         }
         else if (ctrl->offsetHope != cmd->protSeq)
@@ -489,7 +489,7 @@ u16eRspCode upStepProtChk(UpProtStepCmd *cmd, u16 pldLen)
             }
             else
             {
-                recvCtrlFree(cmd->trayIdx);
+                recvCtrlFree(tray);
                 return RspMultiSeq;
             }
         }
@@ -1325,9 +1325,9 @@ b8 trayHasWarn(Tray *tray)
 
 u16eRspCode cmmnStartTrayChk(Tray *tray)
 {
-    if (NULL != recvCtrlGet(tray->trayIdx)) /*流程或保护未完成*/
+    if (NULL != tray->flowRecvCtrl) /*流程或保护未完成*/
     {
-        recvCtrlFree(tray->trayIdx);
+        recvCtrlFree(tray);
         return RspFlow;
     }
 
@@ -1514,6 +1514,21 @@ void upMsgFlowStart(u8 *pld, u16 pldLen)
             stepNode = Container(StepNode, chain, chain);
             step = stepNode->stepObj;
             chn->chnProtBuf.idleProtEna = True;
+            if (NULL != chn->bypsSeriesInd)  /*旁路*/
+            {
+                BypsSeriesInd *seriesInd;
+                u8 idx;
+            
+                seriesInd = chn->bypsSeriesInd;
+                memset(seriesInd, 0, sizeof(BypsSeriesInd));
+                seriesInd->needStart = True;
+                for (idx=0; idx<chn->chnCellAmt; idx++)
+                {
+                    BitSet(seriesInd->startCell, idx);
+                    BitSet(seriesInd->runCell, idx);
+                }
+            }
+            
             if (Ok == chnProtReverse(chn))
             {
                 chn->chnStepId = 0;
@@ -1528,21 +1543,6 @@ void upMsgFlowStart(u8 *pld, u16 pldLen)
                 chn->capDisChgTtl = 0;
                 chn->chgTypePre = ChgTypeCri;
                 chnStepSwPre(chn);
-                if (NULL != chn->bypsSeriesInd)  /*旁路*/
-                {
-                    BypsSeriesInd *seriesInd;
-                    u8 idx;
-
-                    seriesInd = chn->bypsSeriesInd;
-                    memset(seriesInd, 0, sizeof(BypsSeriesInd));
-                    seriesInd->needStart = True;
-                    for (idx=0; idx<chn->chnCellAmt; idx++)
-                    {
-                        BitSet(seriesInd->startCell, idx);
-                        BitSet(seriesInd->runCell, idx);
-                    }
-                }
-
                 if (0 == getStepEndTime(stepNode->stepObj))
                 {
                     /*如果工步截止时间为零,需要跳下个工步,并生成一条数据*/
@@ -1559,6 +1559,24 @@ void upMsgFlowStart(u8 *pld, u16 pldLen)
                 else
                 {
                     chn->chnStateMed = ChnStaNpWait;
+                }
+
+                if (NULL != chn->bypsSeriesInd)  /*旁路*/
+                {
+                    Cell *cell;
+                    Cell *cellCri;
+                
+                    for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++)
+                    {
+                        cell->cellUpStepId = chn->chnStepId;
+                        cell->cellUpStepType = chn->upStepType;
+                        cell->cellCapCtnu = 0;
+                        cell->cellCapFlowCrnt = 0;
+                        cell->cellCapStep = 0;
+                        cell->cellCapLow = 0;
+                        cell->cellCapChg = 0;
+                        cell->cellCapDisChg = 0;
+                    }
                 }
             }
         }
@@ -1650,7 +1668,8 @@ void upMsgFlowStart(u8 *pld, u16 pldLen)
 
         for (chn=tray->chn,chnCri=&tray->chn[tray->trayChnAmt]; chn<chnCri; chn++)
         {
-            if (chn->bypsSeriesInd->needStart)
+            seriesInd = chn->bypsSeriesInd;
+            if (seriesInd->needStart)
             {
                 chn->chnProtBuf.idleProtEna = True;
                 chain = chn->flowStepEntry->stepList.next;
@@ -1658,6 +1677,9 @@ void upMsgFlowStart(u8 *pld, u16 pldLen)
                 step = stepNode->stepObj;
                 if (Ok == chnProtReverse(chn))
                 {
+                    Cell *cell;
+                    Cell *cellCri;
+
                     chn->chnStepId = 0;
                     chn->crntStepNode = stepNode;
                     chn->chnStepType = chn->upStepType = step->stepType;
@@ -1685,6 +1707,21 @@ void upMsgFlowStart(u8 *pld, u16 pldLen)
                     else
                     {
                         chn->chnStateMed = ChnStaNpWait;
+                    }
+
+                    for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++)
+                    {
+                        if (BitIsSet(seriesInd->runCell, cell->cellIdxInChn))
+                        {
+                            cell->cellUpStepId = chn->chnStepId;
+                            cell->cellUpStepType = chn->upStepType;
+                            cell->cellCapCtnu = 0;
+                            cell->cellCapFlowCrnt = 0;
+                            cell->cellCapStep = 0;
+                            cell->cellCapLow = 0;
+                            cell->cellCapChg = 0;
+                            cell->cellCapDisChg = 0;
+                        }
                     }
                 }
             }
@@ -1732,7 +1769,7 @@ u16eRspCode upMsgFlowStopChk(UpFlowCtrlCmd *upCmd, u16 pldLen, DevMgr *dev)
             {
                 return RspChnIdx;
             }
-            else if (ChnStaRun != chn->chnStateMed)
+            if (ChnStaRun!=chn->chnStateMed && ChnStaIdle!=chn->chnStateMed && ChnStaPause!=chn->chnStateMed)
             {
                 return RspChnWoRun;
             }
@@ -1832,12 +1869,15 @@ void upMsgFlowPause(u8 *pld, u16 pldLen)
         for (idx=0; idx<upCmd->chnAmt; idx++)
         {
             chn = upChnMap(tray, upCmd->chnId[idx], &genChnIdx);
-            seriesInd = chn->bypsSeriesInd;
-            seriesInd->pausedCell = seriesInd->startCell & ~seriesInd->stopedCell;
-            seriesInd->stopingCell = seriesInd->startCell;
-            chn->chnStateMed = ChnStaUpPauseReq;
-            boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStop);
-            trayNpChnFree(tray, chn);
+            if (ChnStaRun == chn->chnStateMed)
+            {
+                seriesInd = chn->bypsSeriesInd;
+                seriesInd->pausedCell = seriesInd->startCell & ~seriesInd->stopedCell;
+                seriesInd->stopingCell = seriesInd->startCell;
+                chn->chnStateMed = ChnStaUpPauseReq;
+                boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStop);
+                trayNpChnFree(tray, chn);
+            }
         }
     }
 
@@ -1949,7 +1989,10 @@ void upMsgFlowStop(u8 *pld, u16 pldLen)
         for (idx=0; idx<upCmd->chnAmt; idx++)
         {
             chn = upChnMap(tray, upCmd->chnId[idx], &genChnIdx);
-            boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStop);
+            if (ChnStaRun == chn->chnStateMed)
+            {
+                boxCtrlAddChn(chn->box, chn->chnIdxInBox, ChnStop);
+            }
             genChnIdx -= 1;
             seriesInd = chn->bypsSeriesInd;
             BitSet(seriesInd->stopingCell, genChnIdx);
@@ -2017,11 +2060,12 @@ errHandler:
     return;
 }
 
+/*旁串,目前仅支持主通道下需要续接的电芯在同一个节奏,,todo,,以后完善不同节奏也能续接*/
 u16eRspCode upMsgFlowStackChk(UpFlowCtrlCmd *upCmd, u16 pldLen, DevMgr *dev)
 {
     Tray *tray;
     UpCtnuChnlInd *chnInd;
-    UpCtnuChnlInd *sentry;
+    UpCtnuChnlInd *fstInd;
     Channel *chn;
     Channel *chnCri;
     StepObj *step;
@@ -2045,14 +2089,15 @@ u16eRspCode upMsgFlowStackChk(UpFlowCtrlCmd *upCmd, u16 pldLen, DevMgr *dev)
 
     if (0 == upCmd->chnAmt)
     {
-        return RspChnIdx; /*todo,增加整盘续接*/
+        return RspChnIdx; /*todo,增加整盘续接,,不过貌似不会用到*/
     }
     else
     {
         u16 chnIdx;
+        u16 genIdxTmp;
         u16 chnCnt;
 
-        for (chnInd=upCmd->ctnuInd, chnCnt=0; chnCnt<upCmd->chnAmt; chnCnt++)
+        for (fstInd=chnInd=upCmd->ctnuInd, chnCnt=0; chnCnt<upCmd->chnAmt; chnCnt++)
         {
             if (chnInd->chnId >= tray->genChnAmt)
             {
@@ -2066,6 +2111,25 @@ u16eRspCode upMsgFlowStackChk(UpFlowCtrlCmd *upCmd, u16 pldLen, DevMgr *dev)
                 {
                     return RspChnIdx;
                 }
+
+            #if 1
+                /*旁串的节奏检查,,不严谨,,不过目前够用,,todo,,支持后删除*/
+                if (chn != upChnMap(tray, fstInd->chnId, &genIdxTmp))
+                {
+                    fstInd = chnInd;
+                }
+
+                if (fstInd->ctnuStepId!=chnInd->ctnuStepId || fstInd->loopAmt!=chnInd->loopAmt
+                    || fstInd->stepRestTime!=chnInd->stepRestTime || fstInd->capStep!=chnInd->capStep)
+                {
+                    return RspParam;
+                }
+
+                if (chnInd->loopAmt && memcmp(fstInd->loopDscr, chnInd->loopDscr, sizeof(LoopDscr)*chnInd->loopAmt))
+                {
+                    return RspParam;
+                }
+            #endif
             }
             else
             {
@@ -2131,6 +2195,7 @@ u16eRspCode upMsgFlowStackChk(UpFlowCtrlCmd *upCmd, u16 pldLen, DevMgr *dev)
     return RspOk;
 }
 
+/*不检查暂停态,空闲态也能续接,,只要上位机愿意*/
 void upMsgFlowStack(u8 *pld, u16 pldLen)
 {
     UpFlowCtrlCmd *upCmd;
@@ -2164,13 +2229,6 @@ void upMsgFlowStack(u8 *pld, u16 pldLen)
         for (chnInd=upCmd->ctnuInd, chnCnt=0; chnCnt<upCmd->chnAmt; chnCnt++)
         {
             chn = upChnMap(tray, chnInd->chnId, &genChnIdx);
-        #if 0  /*目前不检查暂停态,空闲态也能续接*/
-            if (ChnStaPause != chn->chnStateMed)
-            {
-                continue;
-            }
-        #endif 
-
             if (0 == chnInd->stepRestTime)
             {
                 stepNode = findStepNode(chn->flowStepEntry, chnInd->ctnuStepId);
@@ -2239,6 +2297,8 @@ void upMsgFlowStack(u8 *pld, u16 pldLen)
     {
         StepNode *stepNode;
         Channel *chnCri;
+        Cell *cell;
+        Cell *cellCri;
         BypsSeriesInd *seriesInd;
         u16 genChnIdx;
         u16 chnCnt;
@@ -2253,7 +2313,9 @@ void upMsgFlowStack(u8 *pld, u16 pldLen)
             chn = upChnMap(tray, chnInd->chnId, &genChnIdx);
             genChnIdx -= 1;
             seriesInd = chn->bypsSeriesInd;
-            chn->cell[genChnIdx].chnProtBuf.idleProtEna = True;
+            cell = chn->cell + genChnIdx;
+            cell->chnProtBuf.idleProtEna = True;
+            cell->cellCapCtnu = chnInd->capFlowCrnt;
             if (!seriesInd->needStart)
             {
                 memset(seriesInd, 0, sizeof(BypsSeriesInd));
@@ -2333,6 +2395,20 @@ void upMsgFlowStack(u8 *pld, u16 pldLen)
                     else
                     {
                         chn->chnStateMed = ChnStaNpWait;
+                    }
+                }
+
+                for (cell=chn->cell,cellCri=cell+chn->chnCellAmt; cell<cellCri; cell++)
+                {
+                    if (BitIsSet(seriesInd->runCell, cell->cellIdxInChn))
+                    {
+                        cell->cellUpStepId = chn->chnStepId;
+                        cell->cellUpStepType = chn->upStepType;
+                        cell->cellCapCtnu = chn->capCtnu;
+                        cell->cellCapStep = chn->capStep;
+                        cell->cellCapLow = 0;
+                        cell->cellCapChg = 0;
+                        cell->cellCapDisChg = 0;
                     }
                 }
             }
@@ -2425,7 +2501,6 @@ rspUp:
     return;
 }
 
-/*todo,里面的reset都要挪走*/
 void upMsgWarnDel(u8 *pldCmd, u16 pldLenCmd)
 {
     Tray *tray;
@@ -2563,13 +2638,13 @@ void upMsgSeriesCellSw(u8 *pld, u16 pldLen)
             {
                 for (idx=0; idx<chn->chnCellAmt; idx++)
                 {
-                    BitSet(seriesInd->idleCutInCell, idx);
+                    BitSet(seriesInd->idleSwInCell, idx);
                     BitSet(seriesInd->idleSwCell, idx);
                 }
             }
             else
             {
-                seriesInd->idleCutInCell = 0;
+                seriesInd->idleSwInCell = 0;
                 for (idx=0; idx<chn->chnCellAmt; idx++)
                 {
                     BitSet(seriesInd->idleSwCell, idx);
@@ -2589,11 +2664,11 @@ void upMsgSeriesCellSw(u8 *pld, u16 pldLen)
             BitSet(seriesInd->idleSwCell, genChnIdx-1);
             if (1 == upCmd->swInd)  /*切入*/
             {
-                BitSet(seriesInd->idleCutInCell, idx);
+                BitSet(seriesInd->idleSwInCell, idx);
             }
             else
             {
-                BitClr(seriesInd->idleCutInCell, idx);
+                BitClr(seriesInd->idleSwInCell, idx);
             }
         }
     }
@@ -2674,6 +2749,75 @@ void upMsgRgbCtrl(u8 *pld, u16 pldLen)
 
 rspUp:
     rspUpCmmn(UpCmdIdManuRgbCtrl, 0, rspCode);
+    return;
+}
+
+/*目前仅支持并联*/
+u16eRspCode upMsgBoxChkChk(UpBoxChkCmd *upCmd, u16 pldLen)
+{
+    Tray *tray;
+    Box *box;
+    u16 idx;
+
+    if (pldLen!=sizeof(UpBoxChkCmd)+sizeof(BoxChkParam)*upCmd->chnAmt || upCmd->trayIdx>=gDevMgr->trayAmt)
+    {
+        return RspParam;
+    }
+
+    tray = gDevMgr->tray + upCmd->trayIdx;
+    if (upCmd->boxIdx>=tray->boxAmt || upCmd->chkStage>=BoxChkStageCri)
+    {
+        return RspParam;
+    }
+
+    box = tray->box + upCmd->boxIdx;
+    if (upCmd->chnAmt>box->boxChnAmt || BoxTypeParallel!=tray->box->boxType)
+    {
+        return RspParam;
+    }
+
+    for (idx=0; idx<upCmd->chnAmt; idx++)
+    {
+        if (upCmd->param[idx].chnIdx >= box->boxChnAmt)
+        {
+            return RspParam;
+        }
+    }
+
+    return RspOk;
+}
+
+/*下位机自检,属于透传类型,目前仅限于并联*/
+void upMsgBoxChk(u8 *pld, u16 pldLen)
+{
+    UpBoxChkCmd *upCmd;
+    CanAuxCmdBuf *auxBuf;
+    BoxMsgHead *boxHead;
+    BoxChkCmd *boxCmd;
+    Tray *tray;
+    Box *box;
+    u16eRspCode rspCode;
+
+    upCmd = (UpBoxChkCmd *)pld;
+    if (RspOk != (rspCode = upMsgBoxChkChk(upCmd, pldLen))
+        || RspOk != (rspCode = NULL==(auxBuf=allocAuxCanBuf()) ? RspBusy : RspOk))
+    {
+        rspUpCmmn(UpCmdIdManuBoxChk, upCmd->trayIdx, rspCode);
+        return;
+    }
+
+    tray = gDevMgr->tray + upCmd->trayIdx;
+    box = tray->box + upCmd->boxIdx;
+    setCaliAuxCanBuf(auxBuf, box, UpCmdIdCaliNtfy);
+    boxHead = (BoxMsgHead *)auxBuf->msgBuf;
+    boxHead->msgId = BoxMsgBoxChk;
+    boxHead->msgLen = sizeof(BoxMsgHead) + sizeof(BoxChkCmd) + sizeof(BoxChkParam)*upCmd->chnAmt;
+    boxCmd = (BoxChkCmd *)boxHead->payload;
+    boxCmd->chkStage = upCmd->chkStage;
+    boxCmd->beTouch = upCmd->beTouch;
+    boxCmd->chnAmt = upCmd->chnAmt;
+    memcpy(boxCmd->param, upCmd->param, sizeof(BoxChkParam)*upCmd->chnAmt);
+    boxAuxTxTry(box->canIdx, auxBuf);
     return;
 }
 
@@ -3035,7 +3179,7 @@ void upMsgUpdSetup(u8 *pld, u16 pldLen)
     }
     else  /*todo,增加温度盒等uart设备的维护模式*/
     {
-    #if 0  /*todo, 不是无效代码，只是临时注释掉*/
+    #if 0  /*todo, 不是无效代码,只是目前未用*/
         UartBlockCmdBuf *blkBuf;
         UartMsgHead *uartHead;
         UartUpdSetupCmd *uartCmd;
@@ -4910,6 +5054,7 @@ void upInitApp()
     mgr->upMsgProcManu[UpMsgIdManuWarnDel] = upMsgWarnDel;
     mgr->upMsgProcManu[UpMsgIdManuCellSw] = upMsgSeriesCellSw;
     mgr->upMsgProcManu[UpMsgIdManuRgbCtrl] = upMsgRgbCtrl;
+    mgr->upMsgProcManu[UpMsgIdManuBoxChk] = upMsgBoxChk;
 
     /*配置升级类*/
     for (idx=0; idx<UpMsgIdUpdCri; idx++)

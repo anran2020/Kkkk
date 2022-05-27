@@ -236,7 +236,7 @@ typedef struct
     u8 npHigh; /*0-忽略1-关闭2-打开*/
     u8 npLow; /*0-忽略1-关闭2-打开*/
     u8 vacumBrk; /*0-忽略1-关闭2-打开*/
-    u8 npRatio; /*0-忽略1-关闭2-打开*/
+    u8 npGate; /*0-忽略1-关闭2-打开*/
     s16 npVal;  /*npRatio打开有效*/
 }NdbdMcuCtrlCmd;
 /*---------------针床主控消息，结束-----------------*/
@@ -653,7 +653,7 @@ extern void uartSmplBegin(Timer *timer);
 extern b8 tmprSmplBeOnline(u8 trayIdx);
 extern void ndbdMcuCtrlRst(NdbdMcuCtrl *ndbdMcuCtrl);
 extern void uartNdbdMcuCtrlTxTry(u8 trayIdx);
-extern void uartNdbdMcuCtrlAdd(u8 trayIdx, u8eNdbdCtrlType type, s16 oprVal, s16 npVal);
+extern void uartNdbdMcuCtrlAdd(u8 trayIdx, u8eNdbdCtrlType type, s16 oprVal);
 
 #ifdef __cplusplus
 }

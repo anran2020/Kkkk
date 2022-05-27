@@ -50,11 +50,11 @@ void plc_setting_load(void )
     addr=mySetting->plc1MapTrayStartAddr;
     for (i = 0; i < gPlcMapTrayNum; i++)
     {
-        gPlcTrayIdx[i]=addr++;
+       gPlcTrayIdx[i]=addr++;
     }
     for (i = 0; i < gDevMgr->trayAmt; i++)
     {
-        gPlcTrayAddrBase[i]=mySetting->plc1ReadBaseAddr[i];
+       gPlcTrayAddrBase[i]=mySetting->plc1ReadBaseAddr[i];
     }
     gPlcReadAmtMax=mySetting->plc1ReadMaxAddr[0];
 
@@ -212,7 +212,7 @@ void plcRegWriteTry(u8 trayIdx, u8eNdbdCtrlType type, s16 val)
     u8 trayIdxInPlc;
 
     if (NULL==(plc=devTrayIdx2Plc(trayIdx, gPlcMgr, &trayIdxInPlc))
-            || !plc->online || NULL==(blkBuf=plcBlkBufAlloc(plc)))
+        || !plc->online || NULL==(blkBuf=plcBlkBufAlloc(plc)))
     {
         return;
     }
@@ -323,10 +323,10 @@ void plcExprAckNtfy(Plc *plc)
             plc->delaySmplCnt = 0;
             gDevMgr->tray[plc->plc2TrayIdx[plc->smplTrayIdx]].ndbdData.status[NdbdStaTouch] = 0;
             sendUpConnNtfy();
-#ifdef DebugVersion
-#else
+    #ifdef DebugVersion
+    #else
             pb_plc_usocket_reconn(plc->plcIdx);
-#endif
+    #endif
         }
     }
 
@@ -415,7 +415,7 @@ void plcRxSmplAck(Plc *plc, u8 *buf)
         if (0 != tray->npMgr.closeBrkDelaySecT08)
         {
             timerStart(&tray->npSwRstDelayTmr, TidNpSwRstDelay,
-                       tray->npMgr.closeBrkDelaySecT08*1000, WiReset);
+                tray->npMgr.closeBrkDelaySecT08*1000, WiReset);
         }
         trayStopByProt(tray, Cc0NdbdBrkAbnml);
     }
@@ -473,7 +473,7 @@ u16 plcRxMsg(u8 plcIdx, u8 *buf, u16 size)
         pldLen = WordToNet(ackHead->length);
         transId = WordToNet(ackHead->transId);
         if (plc->transId != transId)
-            //if (plc->transId != WordToNet(ackHead->transId)) /很神奇,留着*/
+        //if (plc->transId != WordToNet(ackHead->transId)) /很神奇,留着*/
         {
             return 0;  /*丢弃，清空*/
         }
@@ -589,10 +589,10 @@ void plcInitAddr(PlcMgr *mgr)
     mgr->plcSta[NdbdSenRatioVal].amount = 1;
     mgr->plcSta[NdbdSenRatioVal].plcAddr = 17;
     strcpy(mgr->plcSta[NdbdSenRatioVal].name, "ratioVal");
-    mgr->plcSta[NdbdSenSwValve].enable = True;
-    mgr->plcSta[NdbdSenSwValve].amount = 1;
-    mgr->plcSta[NdbdSenSwValve].plcAddr = 18;
-    strcpy(mgr->plcSta[NdbdSenSwValve].name, "swValve");
+    mgr->plcSta[NdbdSenNpGate].enable = True;
+    mgr->plcSta[NdbdSenNpGate].amount = 1;
+    mgr->plcSta[NdbdSenNpGate].plcAddr = 18;
+    strcpy(mgr->plcSta[NdbdSenNpGate].name, "npGate");
     mgr->plcSta[NdbdSenBrkVacum].enable = True;
     mgr->plcSta[NdbdSenBrkVacum].amount = 1;
     mgr->plcSta[NdbdSenBrkVacum].plcAddr = 19;
@@ -703,10 +703,10 @@ void plcInitAddr(PlcMgr *mgr)
     mgr->plcCtrl[NdbdSetRatioVal].amount = 1;
     mgr->plcCtrl[NdbdSetRatioVal].plcAddr = 77;
     strcpy(mgr->plcCtrl[NdbdSetRatioVal].name, "ratio");
-    mgr->plcCtrl[NdbdSetSwValve].enable = True;
-    mgr->plcCtrl[NdbdSetSwValve].amount = 1;
-    mgr->plcCtrl[NdbdSetSwValve].plcAddr = 79;
-    strcpy(mgr->plcCtrl[NdbdSetSwValve].name, "valve");
+    mgr->plcCtrl[NdbdSetNpGate].enable = True;
+    mgr->plcCtrl[NdbdSetNpGate].amount = 1;
+    mgr->plcCtrl[NdbdSetNpGate].plcAddr = 79;
+    strcpy(mgr->plcCtrl[NdbdSetNpGate].name, "npSw");
     mgr->plcCtrl[NdbdSetBrkVacum].enable = True;
     mgr->plcCtrl[NdbdSetBrkVacum].amount = 1;
     mgr->plcCtrl[NdbdSetBrkVacum].plcAddr = 80;
@@ -752,10 +752,10 @@ void plcInitAddr(PlcMgr *mgr)
     mgr->plcSta[NdbdSenRatioVal].amount = 1;
     mgr->plcSta[NdbdSenRatioVal].plcAddr = 35;
     strcpy(mgr->plcSta[NdbdSenRatioVal].name, "ratioVal");
-    mgr->plcSta[NdbdSenSwValve].enable = True;
-    mgr->plcSta[NdbdSenSwValve].amount = 1;
-    mgr->plcSta[NdbdSenSwValve].plcAddr = 36;
-    strcpy(mgr->plcSta[NdbdSenSwValve].name, "swValve");
+    mgr->plcSta[NdbdSenNpGate].enable = True;
+    mgr->plcSta[NdbdSenNpGate].amount = 1;
+    mgr->plcSta[NdbdSenNpGate].plcAddr = 36;
+    strcpy(mgr->plcSta[NdbdSenNpGate].name, "npGate");
     mgr->plcSta[NdbdSenBrkVacum].enable = True;
     mgr->plcSta[NdbdSenBrkVacum].amount = 1;
     mgr->plcSta[NdbdSenBrkVacum].plcAddr = 37;
@@ -866,10 +866,10 @@ void plcInitAddr(PlcMgr *mgr)
     mgr->plcCtrl[NdbdSetRatioVal].amount = 1;
     mgr->plcCtrl[NdbdSetRatioVal].plcAddr = 160;
     strcpy(mgr->plcCtrl[NdbdSetRatioVal].name, "ratio");
-    mgr->plcCtrl[NdbdSetSwValve].enable = True;
-    mgr->plcCtrl[NdbdSetSwValve].amount = 1;
-    mgr->plcCtrl[NdbdSetSwValve].plcAddr = 162;
-    strcpy(mgr->plcCtrl[NdbdSetSwValve].name, "valve");
+    mgr->plcCtrl[NdbdSetNpGate].enable = True;
+    mgr->plcCtrl[NdbdSetNpGate].amount = 1;
+    mgr->plcCtrl[NdbdSetNpGate].plcAddr = 162;
+    strcpy(mgr->plcCtrl[NdbdSetNpGate].name, "npSw");
     mgr->plcCtrl[NdbdSetBrkVacum].enable = True;
     mgr->plcCtrl[NdbdSetBrkVacum].amount = 1;
     mgr->plcCtrl[NdbdSetBrkVacum].plcAddr = 163;

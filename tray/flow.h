@@ -183,13 +183,13 @@ typedef struct
 
 /*资源均可独立修改，不知瓶颈可能是哪个*/
 #if 1
-#define FlowObjAmt8  64    /*(sizeof(FlowObj)+32)*128 = 6k*/
-#define FlowObjAmt6  384    /*(sizeof(FlowObj)+24)*384 = 16k*/
-#define FlowObjAmt4  1024    /*(sizeof(FlowObj)+16)*1024 = 36k*/
-#define FlowObjAmt2  768    /*(sizeof(FlowObj)+8)*768 = 21k*/
-#define StepNodeAmt  1024  /*sizeof(StepNode)*4096 = 48k*/
-#define ProtNodeAmt  3072  /*sizeof(ProtNode)*4096 = 48k*/
-#define FlowEntryAmt 768   /*sizeof(FlowEntry)*768 = 15k*/
+#define FlowObjAmt8  64    /*(sizeof(FlowObj)+32)*64 = 3k*/
+#define FlowObjAmt6  384    /*(sizeof(FlowObj)+24)*384 = 15k*/
+#define FlowObjAmt4  1024    /*(sizeof(FlowObj)+16)*1024 = 32k*/
+#define FlowObjAmt2  768    /*(sizeof(FlowObj)+8)*768 = 18k*/
+#define StepNodeAmt  1024  /*sizeof(StepNode)*1024 = 20k*/
+#define ProtNodeAmt  3072  /*sizeof(ProtNode)*3072 = 24k*/
+#define FlowEntryAmt 768   /*sizeof(FlowEntry)*768 = 18k*/
 #define FlowStepCfgAmt 16  /*sizeof(FlowStepCfg)*16 <= 1k*/
 #else  /*临时调试用*/
 #define FlowObjAmt8  64    /*(sizeof(FlowObj)+32)*128 = 6k*/
@@ -230,8 +230,6 @@ typedef struct
     ListD idleProtCfgList;  /*流程中的配置项,含流程保护配置项和工步负压配置*/
     ListD busyFlowProtCfgList;  /*流程保护中的配置项*/
     ListD busyStepProtCfgList;  /*流程工步中的配置项,目前只有负压*/
-
-    FlowRecvCtrl *recvCtrl[3];  /*不用防呆,起定时防呆也行*/
 }FlowCb;
 
 #ifdef __cplusplus
@@ -239,9 +237,9 @@ extern "C"  {
 #endif
 
 struct channelTag;
+struct trayTag;
 
-extern FlowRecvCtrl *recvCtrlGet(u8);
-extern void recvCtrlFree(u8);
+extern void recvCtrlFree(struct trayTag *tray);
 extern u16eRspCode upFlowStepSave(u8 *flow);
 extern u16eRspCode upTrayProtSave(u8 *protGen);
 extern u16eRspCode upStepProtSave(u8 *protStep);

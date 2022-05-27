@@ -32,6 +32,7 @@ extern void chnLowSmplProc(Channel *chn, void *upSmpl, void *lowSmpl);
 extern void chnInit(void);
 extern u8eUpChnState chnStaMapMed2Up(Channel *chn);
 extern void chnStopByProt(Channel *chn, b8 beTrayProt);
+extern void bypsSeriesCellProt(Channel *chn);
 extern b8 chnBeInIdle(Channel *chn, ChnProtBuf *protBuf);
 extern b8 chnBeInRun(Channel *chn, ChnProtBuf *protBuf);
 extern u8eChgType stepType2ChgType(u8eStepType stepType);

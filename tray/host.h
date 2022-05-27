@@ -12,6 +12,7 @@
 #include "flow.h"
 #include "timer.h"
 #include "entry.h"
+#include "box.h"
 
 
 /*上位机消息类型定义：msg group + (msg type +) msg id*/
@@ -50,7 +51,8 @@ typedef u8 u8eUpMsgIdManu;
 #define UpMsgIdManuCtnu         0x0f
 #define UpMsgIdManuCellSw          0x10
 #define UpMsgIdManuRgbCtrl          0x11
-#define UpMsgIdManuCri          0x12
+#define UpMsgIdManuBoxChk          0x12
+#define UpMsgIdManuCri          0x13
 
 /*配置升级命令类*/
 typedef u8 u8eUpMsgIdUpdate;
@@ -157,6 +159,7 @@ typedef u8 u8eUpMsgIdFixtLocat;  /*定位工装*/
 #define UpCmdIdManuWarnDel  (UpCmdId(UpMsgGrpManu, UpMsgIdManuWarnDel))
 #define UpCmdIdManuCellSw  (UpCmdId(UpMsgGrpManu, UpMsgIdManuCellSw))
 #define UpCmdIdManuRgbCtrl  (UpCmdId(UpMsgGrpManu, UpMsgIdManuRgbCtrl))
+#define UpCmdIdManuBoxChk  (UpCmdId(UpMsgGrpManu, UpMsgIdManuBoxChk))
 #define UpCmdIdUpdCfgRead  (UpCmdId(UpMsgGrpUpdate, UpMsgIdUpdCfgRead))
 #define UpCmdIdUpdCfgSet  (UpCmdId(UpMsgGrpUpdate, UpMsgIdUpdCfgSet))
 #define UpCmdIdUpdSetup  (UpCmdId(UpMsgGrpUpdate, UpMsgIdUpdSetup))
@@ -641,6 +644,29 @@ typedef struct
   u8 rgbInd;  /*bit0--绿,bit1--黄,bit2--红,0灭1亮,bit3--蜂鸣,0停1响*/
   u8 rsvd[3];
 }UpRgbCtrlCmd;
+
+/*下位机自检*/
+typedef struct
+{
+    u8 trayIdx;
+    u8 boxIdx;
+    u8eBoxChkStage chkStage;
+    b8 beTouch;
+    u16 chnAmt;
+    u16 rsvd;
+    BoxChkParam param[0];
+}UpBoxChkCmd;
+
+typedef struct
+{
+    u16eRspCode rspCode;
+    u8 trayIdx;
+    u8 boxIdx;
+    u8eBoxChkStage chkStage;
+    b8 beTouch;
+    u16 chnAmt;
+    BoxChkResult result[0];
+}UpBoxChkAck;
 
 /*启停消息的响应适用通用上位机响应*/
 /*---------------启停控制消息，结束-----------------*/

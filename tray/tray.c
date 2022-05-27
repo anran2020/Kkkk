@@ -255,31 +255,31 @@ void trayNpRatioSet(u8 trayIdx, u8eNpOprCode npOpr, u8 swVal, s16 npVal)
     timerStart(&tray->npSwProtDelayTmr, TidNpSwProtDelay, 80000, WiReset);
     TimerStop(&tray->npSwRstDelayTmr);
 
-    if (tray->ndbdCtrlByMcu)  /*mcu为0忽略1关2开*/
+    if (tray->ndbdCtrlByMcu)  /*mcu为0忽略1关2开,,比例阀除外*/
     {
         if (NpOprRatioBrkVacum == npOpr)  /*破真空*/
         {
-            uartNdbdMcuCtrlAdd(trayIdx, NdbdSetBrkVacum, 2, 0);
-            //uartNdbdMcuCtrlAdd(trayIdx, NdbdSetSwValve, 1, 0);
-            uartNdbdMcuCtrlAdd(trayIdx, NdbdSetRatioVal, 1, 0);
+            uartNdbdMcuCtrlAdd(trayIdx, NdbdSetBrkVacum, 2);
+            uartNdbdMcuCtrlAdd(trayIdx, NdbdSetNpGate, 2);
+            uartNdbdMcuCtrlAdd(trayIdx, NdbdSetRatioVal, 0);
         }
         else if (NpOprRatioMkVacum == npOpr)  /*抽真空*/
         {
-            uartNdbdMcuCtrlAdd(trayIdx, NdbdSetBrkVacum, 1, 0);
-            //uartNdbdMcuCtrlAdd(trayIdx, NdbdSetSwValve, 2, 0);
-            uartNdbdMcuCtrlAdd(trayIdx, NdbdSetRatioVal, 2, npVal);
+            uartNdbdMcuCtrlAdd(trayIdx, NdbdSetBrkVacum, 1);
+            uartNdbdMcuCtrlAdd(trayIdx, NdbdSetNpGate, 2);
+            uartNdbdMcuCtrlAdd(trayIdx, NdbdSetRatioVal, npVal);
         }
         else if (NpOprRatioHold == npOpr)  /*保压*/
         {
-            uartNdbdMcuCtrlAdd(trayIdx, NdbdSetBrkVacum, 1, 0);
-            //uartNdbdMcuCtrlAdd(trayIdx, NdbdSetSwValve, 1, 0);
-            uartNdbdMcuCtrlAdd(trayIdx, NdbdSetRatioVal, 1, 0);
+            uartNdbdMcuCtrlAdd(trayIdx, NdbdSetBrkVacum, 1);
+            uartNdbdMcuCtrlAdd(trayIdx, NdbdSetNpGate, 1);
+            uartNdbdMcuCtrlAdd(trayIdx, NdbdSetRatioVal, 0);
         }
         else if (NpOprRatioReset == npOpr)  /*比例阀负压系统常态*/
         {
-            uartNdbdMcuCtrlAdd(trayIdx, NdbdSetBrkVacum, 1, 0);
-            //uartNdbdMcuCtrlAdd(trayIdx, NdbdSetSwValve, 2, 0);
-            uartNdbdMcuCtrlAdd(trayIdx, NdbdSetRatioVal, 1, 0);
+            uartNdbdMcuCtrlAdd(trayIdx, NdbdSetBrkVacum, 1);
+            uartNdbdMcuCtrlAdd(trayIdx, NdbdSetNpGate, 2);
+            uartNdbdMcuCtrlAdd(trayIdx, NdbdSetRatioVal, 0);
         }
 
         uartNdbdMcuCtrlTxTry(trayIdx);
@@ -289,34 +289,34 @@ void trayNpRatioSet(u8 trayIdx, u8eNpOprCode npOpr, u8 swVal, s16 npVal)
         if (NpOprRatioBrkVacum == npOpr)  /*破真空*/
         {
             plcRegWriteTry(trayIdx, NdbdSetBrkVacum, 1);
-            plcRegWriteTry(trayIdx, NdbdSetSwValve, 0);
+            plcRegWriteTry(trayIdx, NdbdSetNpGate, 0);
             plcRegWriteTry(trayIdx, NdbdSetRatioVal, 0);
         }
         else if (NpOprRatioMkVacum == npOpr)  /*抽真空*/
         {
             plcRegWriteTry(trayIdx, NdbdSetBrkVacum, 0);
-            plcRegWriteTry(trayIdx, NdbdSetSwValve, 0);
+            plcRegWriteTry(trayIdx, NdbdSetNpGate, 0);
             plcRegWriteTry(trayIdx, NdbdSetRatioVal, 0-npVal); /*plc要求填正值*/
         }
         else if (NpOprRatioHold == npOpr)  /*保压*/
         {
             plcRegWriteTry(trayIdx, NdbdSetBrkVacum, 0);
-            plcRegWriteTry(trayIdx, NdbdSetSwValve, 1);
+            plcRegWriteTry(trayIdx, NdbdSetNpGate, 1);
             plcRegWriteTry(trayIdx, NdbdSetRatioVal, 0);
         }
         else if (NpOprRatioReset == npOpr)  /*比例阀负压系统常态*/
         {
             plcRegWriteTry(trayIdx, NdbdSetBrkVacum, 0);
-            plcRegWriteTry(trayIdx, NdbdSetSwValve, 0);
+            plcRegWriteTry(trayIdx, NdbdSetNpGate, 0);
             plcRegWriteTry(trayIdx, NdbdSetRatioVal, 0);
         }
         else if (NpOprRatioSwRatio == npOpr) /*sw:0关1开*/
         {
             plcRegWriteTry(trayIdx, NdbdSetRatioVal, 0==swVal ? 0 : 0-npVal);
         }
-        else if (NpOprRatioSwValve == npOpr)
+        else if (NpOprRatioNpGate == npOpr)
         {
-            plcRegWriteTry(trayIdx, NdbdSetSwValve, swVal);
+            plcRegWriteTry(trayIdx, NdbdSetNpGate, swVal);
         }
         else  /*NpOprRatioSwBrk*/
         {
@@ -496,7 +496,7 @@ void trayNpReachChk(Tray *tray)
     if (1==ndbdData->status[NdbdSenBrkVacum] && NpTypeNml!=npMgr->npType)
     {
         /*破开着且目标不是常压,那么一定是高切低*/
-        if (crntNpVal > npMgr->npExpect+80)
+        if (crntNpVal>npMgr->npExpect+50 || crntNpVal>-20)
         {
             trayNpRatioSet(tray->trayIdx, NpOprRatioMkVacum, 0, npMgr->npExpect);
         }
@@ -657,9 +657,9 @@ void trayNdbdCtrl(u8 trayIdx, u8eNdbdCtrlType type, s16 oprVal)
     tray = &gDevMgr->tray[trayIdx];
     if (tray->ndbdCtrlByMcu)
     {
-        if (NdbdSetSwValve != type)  /*目前针床主控没有*/
+        if (NdbdSetNpGate != type)  /*目前针床主控没有*/
         {
-            uartNdbdMcuCtrlAdd(trayIdx, type, oprVal, 0);
+            uartNdbdMcuCtrlAdd(trayIdx, type, oprVal);
             uartNdbdMcuCtrlTxTry(trayIdx);
         }
     }
@@ -684,14 +684,14 @@ void trayMntnEnter(Tray *tray, u8eBoxWorkMode mode)
 #endif
     tray->trayWorkMode |= mode;
     tray->protDisable |= ProtDisableMntn;
-    timerStart(&tray->mntnExprTmr, TidTrayMntnExpr, 60000, WiReset);
+    timerStart(&tray->mntnExprTmr, TidTrayMntnExpr, 75000, WiReset);
     return;
 }
 
 /*收到上位机后续维护指令,更新定时器*/
 void trayMntnKeep(Tray *tray)
 {
-    timerStart(&tray->mntnExprTmr, TidTrayMntnExpr, 60000, WiReset);
+    timerStart(&tray->mntnExprTmr, TidTrayMntnExpr, 75000, WiReset);
     return;
 }
 
@@ -740,7 +740,7 @@ void trayMntnExpr(Timer *timer)
             {
                 /*todo,如果需要通知下位机离开,注掉下一行*/
                 box->boxWorkMode = BoxModeManu;
-                box->online = False;
+                //box->online = False;
             }
         }
     }
@@ -979,6 +979,7 @@ Ret smplDiskWrite(u8 trayIdx, u8 smplAmt, u8 *smplData, u16 smplSeq)
 
     pageId = trayHead->pageBase + smplSeq*trayHead->smplPageAmt;
 #ifdef DebugVersion
+    ret = Ok;
 #else
     ret = sdSpiWriteSmpl(smplData, pageId, trayHead->smplPageAmt,
         trayHead->smplSize, extra.timeStamp, extra.chkSum);

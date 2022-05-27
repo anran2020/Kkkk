@@ -32,7 +32,8 @@ typedef u8 u8eBoxMsgId;
 #define BoxMsgUpdDld  0x19
 #define BoxMsgUpdUpld  0x1a
 #define BoxMsgCellSw 0x1d
-#define BoxMsgCri  0x1e
+#define BoxMsgBoxChk  0x1e
+#define BoxMsgCri  0x1f
 
 typedef u8 u8eLowChnState;
 #define LowChnStateIdle  0x00
@@ -202,8 +203,43 @@ typedef struct
     u16 chnCtrlInd;  /*bitmap,启停指示，1--切入，0--切出*/
     u8 cellCtrlInd[0];   /*bitmap,旁路串联有效,1--选,0--不选,按4对齐*/
 }BoxSeriesSwCmd;
-#endif
 /*-----------------电源箱启停命令负载,结束---------------------*/
+
+/*电源箱自检*/
+typedef u8 u8eBoxChkStage;
+#define BoxChkStageSetup  0x00
+#define BoxChkStageResult  0x01
+#define BoxChkStageCri  0x02
+
+typedef struct
+{
+    u16 chnIdx;
+    u16 rsvd2;
+    s32 chkVol;
+}BoxChkParam;
+
+typedef struct
+{
+    u8eBoxChkStage chkStage;
+    b8 beTouch;
+    u16 chnAmt;
+    BoxChkParam param[0];
+}BoxChkCmd;
+
+typedef struct
+{
+    u16 chnIdx;
+    u16 result;
+}BoxChkResult;
+
+typedef struct
+{
+    u16 rspCode;
+    u8eBoxChkStage chkStage;
+    b8 beTouch;
+    u16 chnAmt;
+    BoxChkResult result[0];
+}BoxChkAck;
 
 /*-----------------电源箱配置升级,开始---------------------*/
 
@@ -223,12 +259,21 @@ typedef u8 u8eBoxCfgType;
 
 #define BoxCfgBase 0x0100
 
+/*写配置命令*/
 typedef struct
 {
     u32 funcSelect;
     u32 funcEnable;
     u32 param[0];
 }BoxCfgInd;
+
+/*读配置响应*/
+typedef struct
+{
+    u16 rspCode;
+    u16 rsvd;
+    BoxCfgInd cfgInd;
+}BoxCfgReadAck;
 
 typedef struct
 {
@@ -384,6 +429,7 @@ typedef struct
     BoxSmplProc boxSmplProc[SmplModeCri];
 }CanMgr;
 
+#endif  /*end of TRAY_ENABLE*/
 /*-----------------电源箱(含子设备)修调,结束---------------------*/
 
 #ifdef __cplusplus
@@ -409,6 +455,8 @@ extern void setCaliAuxCanBuf(CanAuxCmdBuf *auxBuf, Box *box, u16 upMsgId);
 extern void canRxMsg(u8 canId, u8 addr, u8 *data, u16 len);
 extern void traySmplMgrRst(Tray *tray);
 extern void traySmplDefChnSmpl(Tray *tray, Channel *chn, u8eUpChnState state, u16eCauseCode cause);
+extern void trayUpdSmplSeq(SmplSaveMgr *smplMgr);
+extern void trayUpdSmplBuf(SmplSaveMgr *smplMgr);
 
 #ifdef __cplusplus
 }

@@ -148,7 +148,7 @@ void trayRcdChnLastData(Channel *chn)
 {
     ChnProtBuf *protBuf;
 
-    chn->lowCause = CcNone;
+    chn->chnLowCause = CcNone;
     protBuf = &chn->chnProtBuf;
     if (protBuf->newPowerBeValid || !gDevMgr->can[chn->box->canIdx].smplAgainAct)
     {
@@ -678,7 +678,7 @@ void boxCtrlTx(Can *can, Box *box)
 
         BitSet(ctrlCmd->chnCtrlInd, chn->lowChnIdxInBox);
         step = chn->crntStepNode->stepObj;
-        if (NULL != chn->bypsSeriesInd)  /*todo,增加多主通道支持*/
+        if (NULL != chn->bypsSeriesInd)  /*todo,增加多主通道支持,现在1箱1通道*/
         {
             for (idx=0; idx<cellIndByteCnt; idx++)
             {
@@ -1014,6 +1014,7 @@ void boxExprSmplAck(Timer *timer)
     box->reTxSmplCmd = False;
     if (!box->online)
     {
+        box->reTxConnCnt = 0;
         for (chn=box->chn,chnCri=box->chn+box->boxChnAmt; chn<chnCri; chn++)
         {
             if (ChnStaRun == chn->chnStateMed)
@@ -1028,6 +1029,7 @@ void boxExprSmplAck(Timer *timer)
             }
         }
     }
+
     canSmplBoxUpdate(can, can->smplCanBoxIdx+1);
 
 canIdle:
@@ -1140,6 +1142,7 @@ void boxRxConnAck(Can *can, Box *box, u8 *pld, u16 len)
     SubBox *subBox;
     SubBoxInfo *subBoxAck;
     u16 idx;
+    u16 subOnlineCnt;
     u16eCauseCode causeCode;
 
     canSmplBoxUpdate(can, can->smplCanBoxIdx+1);
@@ -1186,14 +1189,15 @@ void boxRxConnAck(Can *can, Box *box, u8 *pld, u16 len)
         return;
     }
 
-    box->online = True;
-    box->boxWorkMode = BoxModeManu;
-    sendUpConnNtfy();
-    for (idx=0,subBoxAck=connAck->boxSub; idx<cfg->volSmplAmt; idx++)
+    for (idx=0,subBoxAck=connAck->boxSub,subOnlineCnt=0; idx<cfg->volSmplAmt; idx++)
     {
         subBox = &box->tray->volSmpl[box->volSmplAmt*box->boxIdxInTray+idx];
         subBox->softVer = subBoxAck->softVer;
         subBox->online = subBoxAck->online;
+        if (subBox->online)
+        {
+            subOnlineCnt++;
+        }
         subBox->addr = subBoxAck->boxAddr;
         subBox->subType = subBoxAck->devType;
         subBoxAck++;
@@ -1203,11 +1207,29 @@ void boxRxConnAck(Can *can, Box *box, u8 *pld, u16 len)
         subBox = &box->tray->bypsSw[box->bypsSwAmt*box->boxIdxInTray+idx];
         subBox->softVer = subBoxAck->softVer;
         subBox->online = subBoxAck->online;
+        if (subBox->online)
+        {
+            subOnlineCnt++;
+        }
         subBox->addr = subBoxAck->boxAddr;
         subBox->subType = subBoxAck->devType;
         subBoxAck++;
     }
 
+    /*尽可能等待主下联机从下以收集信息*/
+    if (subOnlineCnt < cfg->volSmplAmt+cfg->bypsSwAmt)
+    {
+        box->reTxConnCnt++;
+        if (box->reTxConnCnt < 3)
+        {
+            return;
+        }
+    }
+
+    box->reTxConnCnt = 0;
+    box->online = True;
+    box->boxWorkMode = BoxModeManu;
+    sendUpConnNtfy();
     return;
 }
 u16 getLowSmplSize(Channel *chn)
@@ -1252,7 +1274,6 @@ void boxRxSmplTray(Box *box, u16 chnIndBitMap, u8 *smpl)
     {
         if (BitIsSet(chnIndBitMap, chn->lowChnIdxInBox)) /*通道有数据*/
         {
-            //chn->noDataCnt = 0;
             for (; lowChnIdx<chn->lowChnIdxInBox; lowChnIdx++)
             {
                 if (BitIsSet(chnIndBitMap, lowChnIdx))
@@ -1356,9 +1377,43 @@ void boxRxCtrlAck(Can *can, Box *box, u8 *pld, u16 len)
     return;
 }
 
+void boxRxBoxChkAck(Can *can, Box *box, u8 *pld, u16 len)
+{
+    BoxChkAck *boxAck;
+    UpBoxChkAck *upAck;
+    CanAuxCmdBuf *auxBuf;
+    u8 *buf;
+    u16 upPldLen;
+
+    buf = sendUpBuf;
+    upAck = (UpBoxChkAck *)(buf + sizeof(UpMsgHead));
+    boxAck = (BoxChkAck *)pld;
+    auxBuf = can->waitAckAuxCmd;
+    upAck->rspCode = boxAck->rspCode;
+    upAck->trayIdx = box->tray->trayIdx;
+    upAck->boxIdx = box->boxIdxInTray;
+    if (RspOk != upAck->rspCode)
+    {
+        upPldLen = sizeof(UpCmmnAck);
+    }
+    else
+    {
+        upPldLen = sizeof(UpBoxChkAck) + sizeof(BoxChkResult)*boxAck->chnAmt;
+        upAck->chkStage = boxAck->chkStage;
+        upAck->beTouch = boxAck->beTouch;
+        upAck->chnAmt = boxAck->chnAmt;
+        mem2Copy((u16 *)upAck->result, (u16 *)boxAck->result, sizeof(BoxChkResult)*boxAck->chnAmt);
+    }
+    gUpItfCb->upMsgFlowSeq = auxBuf->upMsgFlowSeq;
+    sendUpMsg(buf, upPldLen, UpCmdIdManuBoxChk);
+    freeAuxCanBuf(auxBuf);
+    return;
+}
+
 void boxRxCfgReadAck(Can *can, Box *box, u8 *pld, u16 len)
 {
-    BoxCfgInd *boxAck;
+    BoxCfgReadAck *boxAck;
+    BoxCfgInd *cfgInd;
     UpCfgReadAck *upAck;
     CanAuxCmdBuf *auxBuf;
     UpCfgTlv *tlv;
@@ -1369,21 +1424,22 @@ void boxRxCfgReadAck(Can *can, Box *box, u8 *pld, u16 len)
 
     buf = sendUpBuf;
     upAck = (UpCfgReadAck *)(buf + sizeof(UpMsgHead));
-    boxAck = (BoxCfgInd *)pld;
+    boxAck = (BoxCfgReadAck *)pld;
+    cfgInd = &boxAck->cfgInd;
     auxBuf = can->waitAckAuxCmd;
-    upAck->rspCode = RspOk;  /*协议没有响应码,可能漏了*/
+    upAck->rspCode = boxAck->rspCode;
     upAck->rsvd = 0;
     upPldLen = sizeof(UpCfgReadAck);
-    for (cfgType=0,tlv=upAck->cfgTlv,param=boxAck->param; cfgType<BoxCfgCri; cfgType++)
+    for (cfgType=0,tlv=upAck->cfgTlv,param=cfgInd->param; cfgType<BoxCfgCri; cfgType++)
     {
-        if (!BitIsSet(boxAck->funcSelect, cfgType))
+        if (!BitIsSet(cfgInd->funcSelect, cfgType))
         {
             continue;
         }
 
         tlv->cfgType = BoxCfgBase + cfgType;
         tlv->cfgLen = BoxCfgVolRise==cfgType||BoxCfgCurDown==cfgType ? 12 : 8;
-        tlv->cfgVal[0] = BitIsSet(boxAck->funcEnable, cfgType) ? 1 : 0;
+        tlv->cfgVal[0] = BitIsSet(cfgInd->funcEnable, cfgType) ? 1 : 0;
         if (tlv->cfgVal[0])
         {
             tlv->cfgVal[1] = *param++;
@@ -1476,7 +1532,7 @@ void boxRxCaliNtfyAck(Can *can, Box *box, u8 *pld, u16 len)
     if (boxAck->rspCode==RspOk && !boxAck->caliEnable)
     {
         box->boxWorkMode = BoxModeManu;
-        box->online = False;
+        //box->online = False;
         if (box->tray->trayWorkMode & BoxModeMntnCali)
         {
             trayMntnEnd(box->tray, BoxModeMntnCali);
@@ -1632,6 +1688,7 @@ void boxInit()
     mgr->boxMsgProc[BoxMsgCaliSmpl] = boxRxCaliSmplAck;
     mgr->boxMsgProc[BoxMsgCaliKb] = boxRxCmmnAuxAck;
     mgr->boxMsgProc[BoxMsgCaliStop] = boxRxCmmnAuxAck;
+    mgr->boxMsgProc[BoxMsgBoxChk] = boxRxBoxChkAck;
 
     for (idx=0; idx<BoxMsgCri; idx++)
     {
@@ -1648,6 +1705,7 @@ void boxInit()
     mgr->boxAuxAckExpr[BoxMsgCaliSmpl] = boxExprCaliSmplAck;
     mgr->boxAuxAckExpr[BoxMsgCaliKb] = boxExprCmmnAuxAck;
     mgr->boxAuxAckExpr[BoxMsgCaliStop] = boxExprCmmnAuxAck;
+    mgr->boxAuxAckExpr[BoxMsgBoxChk] = boxExprCmmnAuxAck;
     
     for (idx=0; idx<SmplModeCri; idx++)
     {

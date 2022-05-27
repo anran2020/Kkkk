@@ -22,12 +22,7 @@
 
 FlowCb *gFlowCb;
 
-FlowRecvCtrl *recvCtrlGet(u8 trayIdx)
-{
-    return gFlowCb->recvCtrl[trayIdx];
-}
-
-FlowRecvCtrl *recvCtrlSetup(u8 trayIdx, u16 chnAmt)
+FlowRecvCtrl *recvCtrlSetup(Tray *tray, u16 chnAmt)
 {
     FlowRecvCtrl *ctrl;
 
@@ -41,31 +36,26 @@ FlowRecvCtrl *recvCtrlSetup(u8 trayIdx, u16 chnAmt)
             if (NULL == ctrl->chnIdx)
             {
                 memFree(ctrl);
-                return NULL;
+                ctrl = NULL;
             }
         }
-
-        gFlowCb->recvCtrl[trayIdx] = ctrl;
-        return ctrl;
     }
 
-    return NULL;
+    tray->flowRecvCtrl = ctrl;
+    return ctrl;
 }
 
-void recvCtrlFree(u8 trayIdx)
+void recvCtrlFree(Tray *tray)
 {
-    FlowRecvCtrl *ctrl;
-
-    ctrl = gFlowCb->recvCtrl[trayIdx];
-    if (NULL != ctrl)
+    if (NULL != tray->flowRecvCtrl)
     {
-        if (NULL != ctrl->chnIdx)
+        if (NULL != tray->flowRecvCtrl->chnIdx)
         {
-            memFree(ctrl->chnIdx);
+            memFree(tray->flowRecvCtrl->chnIdx);
         }
 
-        memFree(ctrl);
-        gFlowCb->recvCtrl[trayIdx] = NULL;
+        memFree(tray->flowRecvCtrl);
+        tray->flowRecvCtrl = NULL;
     }
 
     return;
@@ -157,6 +147,7 @@ u16eRspCode stepProtId2ObjAmtId(u16 protId, u8eObjAmtId *id, u8eProtGrp *protGrp
                 case 0x040b:
                 case 0x0410:
                 case 0x0413:
+                case 0x0414:
                     *id = ObjAmtId2;
                     break;
                 case 0x040c:
@@ -925,12 +916,13 @@ u16eRspCode upFlowStepSave(u8    *pld)
 
     ret = RspOk;
     cmd = (UpFlowCmd *)pld;
-    ctrl = recvCtrlGet(cmd->trayIdx);
+    tray = &gDevMgr->tray[cmd->trayIdx];
+    ctrl = tray->flowRecvCtrl;
     if (NULL == ctrl)  /*必是单包或多包之首包*/
     {
         if (cmd->stepAmt < cmd->stepAmtTtl)
         {
-            if (NULL == (ctrl=recvCtrlSetup(cmd->trayIdx, cmd->chnAmt)))
+            if (NULL == (ctrl=recvCtrlSetup(tray, cmd->chnAmt)))
             {
                 return RspBusy;
             }
@@ -951,11 +943,9 @@ u16eRspCode upFlowStepSave(u8    *pld)
         ctrl->offsetHope += cmd->stepAmt;
         if (ctrl->offsetHope == ctrl->total)  /*收完了*/
         {
-            recvCtrlFree(cmd->trayIdx);
+            recvCtrlFree(tray);
         }
     }
-
-    tray = &gDevMgr->tray[cmd->trayIdx];
 
     /*由于工步或保护都有可能分包传输,所以收到单个报文时无法做完整查重*/
     /*所以目前的策略是,首包时先清除,再生成,收到最后报文时查重归并*/
@@ -1144,7 +1134,7 @@ u16eRspCode upFlowStepSave(u8    *pld)
 endHandler:
     if (RspOk != ret)
     {
-        recvCtrlFree(cmd->trayIdx);
+        recvCtrlFree(tray);
         if (0 == cmd->chnAmt)  /*整盘*/
         {
             for (chn=tray->chn,chnCri=&tray->chn[tray->trayChnAmt]; chn<chnCri; chn++)
@@ -1345,12 +1335,12 @@ u16eRspCode upTrayProtSave(u8 *pld)
     ret = RspOk;
     cmd = (UpProtGenCmd *)pld;
     tray = &gDevMgr->tray[cmd->trayIdx];
-    ctrl = recvCtrlGet(cmd->trayIdx);
+    ctrl = tray->flowRecvCtrl;
     if (NULL == ctrl)  /*必是单包或多包之首包*/
     {
         if (cmd->protAmt < cmd->protAmtTtl)
         {
-            if (NULL == (ctrl=recvCtrlSetup(cmd->trayIdx, 0)))
+            if (NULL == (ctrl=recvCtrlSetup(tray, 0)))
             {
                 return RspBusy;
             }
@@ -1367,7 +1357,7 @@ u16eRspCode upTrayProtSave(u8 *pld)
         ctrl->offsetHope += cmd->protAmt;
         if (ctrl->offsetHope == ctrl->total)  /*收完了*/
         {
-            recvCtrlFree(cmd->trayIdx);
+            recvCtrlFree(tray);
         }
     }
 
@@ -1465,7 +1455,7 @@ u16eRspCode upTrayProtSave(u8 *pld)
 endHandler:
     if (RspOk != ret)
     {
-        recvCtrlFree(cmd->trayIdx);
+        recvCtrlFree(tray);
         trayProtRel(tray);
     }
     return ret;
@@ -1536,12 +1526,13 @@ u16eRspCode upStepProtSave(u8 *pld)
 
     ret = RspOk;
     cmd = (UpProtStepCmd *)pld;
-    ctrl = recvCtrlGet(cmd->trayIdx);
+    tray = &gDevMgr->tray[cmd->trayIdx];
+    ctrl = tray->flowRecvCtrl;
     if (NULL == ctrl)  /*必是单包或多包之首包*/
     {
         if (cmd->protAmt < cmd->protAmtTtl)
         {
-            if (NULL == (ctrl=recvCtrlSetup(cmd->trayIdx, cmd->chnAmt)))
+            if (NULL == (ctrl=recvCtrlSetup(tray, cmd->chnAmt)))
             {
                 return RspBusy;
             }
@@ -1562,11 +1553,9 @@ u16eRspCode upStepProtSave(u8 *pld)
         ctrl->offsetHope += cmd->protAmt;
         if (ctrl->offsetHope == ctrl->total)  /*收完了*/
         {
-            recvCtrlFree(cmd->trayIdx);
+            recvCtrlFree(tray);
         }
     }
-
-    tray = &gDevMgr->tray[cmd->trayIdx];
 
     /*由于定容的特殊性(参见本函数最后的查重归并逻辑中的描述),*/
     /*可能出现流程对应的通道与保护对应的通道不一致的情况*/
@@ -1821,7 +1810,7 @@ u16eRspCode upStepProtSave(u8 *pld)
 endHandler:
     if (RspOk != ret)
     {
-        recvCtrlFree(cmd->trayIdx);
+        recvCtrlFree(tray);
         if (0 == cmd->chnAmt)  /*整盘*/
         {
             for (chn=tray->chn,chnCri=&tray->chn[tray->trayChnAmt]; chn<chnCri; chn++)
@@ -1854,11 +1843,6 @@ Ret flowInit(u8 trayAmt)
     if (NULL == (cb = gFlowCb = sysMemAlloc(sizeof(FlowCb))))
     {
         return Nok;
-    }
-
-    for (trayIdx=0; trayIdx<trayAmt; trayIdx++)
-    {
-        gFlowCb->recvCtrl[trayIdx] = NULL;
     }
 
     gFlowCb->flowObjAmt[ObjAmtId2] = FlowObjAmt2;

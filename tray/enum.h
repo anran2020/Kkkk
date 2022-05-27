@@ -61,7 +61,7 @@ typedef u8 u8eChnType;
 typedef u8 u8eUpChnState;  /*用于通知上位机的状态*/
 #define ChnUpStateOffline     0x00
 #define ChnUpStateIdle        0x01   /*流程跑完且新流程未开始*/
-#define ChnUpStateStop        0x02
+#define ChnUpStateStop        0x02  /*实际已废弃,但协议中保留*/
 #define ChnUpStatePause       0x03
 #define ChnUpStateNp          0x04   /*等待负压*/
 #define ChnUpStateStart       0x05   /*尝试启动中*/
@@ -341,7 +341,7 @@ typedef u8 u8eNdbdStaType;
 #define NdbdSenBackTouch 0x06  /*后压合微动0无感1有感应*/
 #define NdbdStaWorkMode 0x07  /*工作模式0工作1维护*/
 #define NdbdSenRatioVal 0x08  /*比例阀模拟量 0~7000*/
-#define NdbdSenSwValve 0x09  /*导通阀0开1关*/
+#define NdbdSenNpGate 0x09  /*导通阀0开1关*/
 #define NdbdSenBrkVacum 0x0a  /*破真空0关1开*/
 #define NdbdSenFireDoorUp 0x0b  /*消防门上限感应0无感1有感*/
 #define NdbdSenFireDoorDown 0x0c  /*消防门下限感应0无感1有感*/
@@ -380,7 +380,7 @@ typedef u8 u8eNdbdCtrlType;
 #define NdbdSetWarnDel 0x02  /*0使能1消警,中位机不写0*/
 #define NdbdSetFireDoor 0x03  /*0保持1打开2关闭,中位机不写0*/
 #define NdbdSetRatioVal 0x04  /*plc要求:0~900的正值表示负压值,0表关*/
-#define NdbdSetSwValve 0x05  /*导通阀0开1关*/
+#define NdbdSetNpGate 0x05  /*导通阀0开1关*/
 #define NdbdSetBrkVacum 0x06  /*破真空0关1开*/
 #define NdbdSetFixtPower 0x07  /*工装供电0断1供,PLC需防呆*/
 #define NdbdSetSlotFan 0x08  /*风扇0停1转*/
@@ -394,7 +394,7 @@ typedef u8 u8eNdbdCtrlType;
 #define BitSenFwdTouch 0x02  /*前压合微动0无感1有感应*/
 #define BitSenBackTouch 0x03  /*后压合微动0无感1有感应*/
 #define BitSenWorkMode 0x04  /*工作模式0工作1维护*/
-#define BitSenSwValve 0x05  /*导通阀0开1关*/
+#define BitSenNpGate 0x05  /*导通阀0开1关*/
 #define BitSenBrkVacum 0x06  /*破真空0关1开*/
 #define BitSenFireDoorUp 0x07  /*消防门上限感应0无感1有感*/
 #define BitSenFireDoorDown 0x08  /*消防门下限感应0无感1有感*/
@@ -436,7 +436,7 @@ typedef u8 u8eNpOprCode;
 #define NpOprRatioMkVacum 0x01  /*抽真空*/
 #define NpOprRatioHold 0x02  /*保压*/
 #define NpOprRatioSwRatio 0x03  /*比例阀*/
-#define NpOprRatioSwValve 0x04  /*导通阀*/
+#define NpOprRatioNpGate 0x04  /*导通阀*/
 #define NpOprRatioSwBrk 0x05  /*破真空阀*/
 #define NpOprRatioReset 0x6  /*比例阀复位,破关比关导开*/
 #define NpOprRatioCri  0x07
